@@ -209,6 +209,7 @@ export const profileToUser = (p) => ({
   ...journeyFieldsFromRow(p),
   tagPermission: p.tag_permission || 'anyone',
   links: Array.isArray(p.links) ? p.links : [],
+  wheelColors: p.wheel_colors && typeof p.wheel_colors === 'object' && !Array.isArray(p.wheel_colors) ? p.wheel_colors : {},
   profileComplete: !!p.handle,
 });
 
@@ -398,11 +399,18 @@ export const updateProfile = async (userId, patch) => {
     }
     delete next.avatarFile;
   }
+  // avatarPhotos may mix already-uploaded URLs and freshly-picked File objects.
+  if ('avatarPhotos' in patch && patch.avatarPhotos) {
+    next.avatarPhotos = await uploadPhotos(userId, patch.avatarPhotos);
+    next.avatarUri = next.avatarPhotos[0] || null;
+  }
   const dbPatch = {};
   const map = {
     name: 'name',
     avatarUri: 'avatar_url',
     avatarPhotos: 'avatar_photos',
+    avatarRotate: 'avatar_rotate',
+    wheelColors: 'wheel_colors',
     birthYear: 'birth_year',
     birthMonth: 'birth_month',
     birthDay: 'birth_day',
@@ -420,6 +428,7 @@ export const updateProfile = async (userId, patch) => {
     state: 'state',
     zipCode: 'zip_code',
     keeperId: 'keeper_id',
+    links: 'links',
   };
   for (const [k, col] of Object.entries(map)) if (k in next) dbPatch[col] = next[k];
   if (Object.keys(dbPatch).length) {
@@ -957,5 +966,87 @@ export const getMyOrders = async (userId) => {
   const { data } = await supabase.from('orders').select('*').eq('user_id', userId).order('created_at', { ascending: false });
   return data || [];
 };
+
+// ---- World spotlight + Circle feed ----------------------------------------
+// One random journey + moment for everyone, on a synchronized server clock
+// (get_journey_spotlight). Skips anyone you've blocked.
+export const getJourneySpotlight = async (blocked = new Set()) => {
+  const { data, error } = await supabase.rpc('get_journey_spotlight');
+  if (error) return null;
+  const row = data?.[0];
+  if (!row || blocked.has(row.profile_id)) return null;
+  return {
+    profileId: row.profile_id,
+    name: row.name,
+    handle: row.handle,
+    avatarUri: await signStoredUrl('photos', row.avatar_url),
+    momentId: row.moment_id,
+    year: row.year,
+    month: row.month,
+    day: row.day,
+    photoUrl: await signStoredUrl('photos', row.photo_url),
+  };
+};
+
+// The newest moments posted by a set of users — the Inner Circle feed. Sealed
+// capsules stay masked (moments_feed). Ordered by when they were posted.
+export const getRecentMomentsOf = async (userIds, limit = 24) => {
+  if (!userIds?.length) return [];
+  const { data, error } = await supabase
+    .from('moments_feed')
+    .select('*')
+    .in('user_id', userIds)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) return [];
+  return hydrateMoments((data || []).map(momentFromRow));
+};
+
+// ---- Witnessing, adopting, contributions, comment tools -------------------
+// Confirm your own tag on someone's moment → it becomes "witnessed".
+export const confirmTag = async (self, momentId, ownerId) => {
+  const { error } = await supabase.from('moment_tags').update({ confirmed: true }).eq('moment_id', momentId).eq('tagged_user_id', self.id);
+  if (error) throw new Error('Could not confirm.');
+  if (ownerId && ownerId !== self.id) await pushNotification(self, ownerId, { type: 'confirm', memoryId: momentId });
+};
+
+export const getAdoptedCopyId = async (userId, sourceMomentId) => {
+  if (!userId || !sourceMomentId) return null;
+  const { data } = await supabase.from('moments').select('id').eq('user_id', userId).eq('source_moment_id', sourceMomentId).maybeSingle();
+  return data?.id || null;
+};
+
+// Copy a moment you were part of onto your own journey (photos and all).
+export const adoptMoment = async (self, momentId) => {
+  const { data: src, error } = await supabase.from('moments_feed').select('*').eq('id', momentId).single();
+  if (error || !src) throw new Error("That moment isn't available.");
+  if (src.sealed_until && src.sealed_until > new Date().toISOString().slice(0, 10)) throw new Error('That moment is a sealed time capsule — you can add it once it opens.');
+  const { data: row, error: insErr } = await supabase.from('moments').insert({
+    user_id: self.id, year: src.year, month: src.month, day: src.day,
+    location: src.location || '', title: src.title || '', caption: src.caption || '', story: src.story || '',
+    photos: src.photos || [], source_moment_id: src.id,
+    place_city: src.place_city || null, place_region: src.place_region || null, place_country: src.place_country || null,
+    place_lat: src.place_lat ?? null, place_lng: src.place_lng ?? null,
+  }).select().maybeSingle();
+  if (insErr && insErr.code !== '23505') throw new Error('Could not add to your Journey.');
+  return row;
+};
+
+// A confirmed companion adds their own side (note + photos) to a moment.
+export const addOrUpdateContribution = async (self, momentId, { photos, note }) => {
+  const uploaded = await uploadPhotos(self.id, photos || []);
+  const { data: existing } = await supabase.from('moment_contributions').select('id').eq('moment_id', momentId).eq('contributor_id', self.id).maybeSingle();
+  const { error } = await supabase.from('moment_contributions').upsert(
+    { moment_id: momentId, contributor_id: self.id, photos: uploaded, note: (note || '').trim(), updated_at: new Date().toISOString() },
+    { onConflict: 'moment_id,contributor_id' }
+  );
+  if (error) throw new Error("Couldn't save your addition.");
+  if (!existing) {
+    const { data: moment } = await supabase.from('moments').select('user_id, title, year').eq('id', momentId).single();
+    if (moment && moment.user_id !== self.id) await pushNotification(self, moment.user_id, { type: 'contribution', memoryId: momentId, memoryTitle: moment.title || 'a moment', year: moment.year });
+  }
+};
+
+export const togglePinComment = async (id, pinned) => { await supabase.from('comments').update({ pinned }).eq('id', id); };
 
 export { byChrono };

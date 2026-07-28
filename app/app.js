@@ -51,7 +51,97 @@ const getProduct = (k) => PRODUCTS.find((p) => p.key === k);
 const priceFor = (product, momentCount) => (!product ? 0 : product.pricing.type === 'perPage' ? Math.round(momentCount * product.pricing.perPage * 100) / 100 : product.pricing.flat);
 const money = (n) => `$${n.toFixed(2)}`;
 
-const state = { user: null, blocked: new Set() };
+// ---- Astro (zodiac + birthstone), avatar rotation, and the profile wheel ---
+const ZODIAC = [
+  { name: 'Capricorn', glyph: '♑', month: 12, startDay: 22 }, { name: 'Aquarius', glyph: '♒', month: 1, startDay: 20 },
+  { name: 'Pisces', glyph: '♓', month: 2, startDay: 19 }, { name: 'Aries', glyph: '♈', month: 3, startDay: 21 },
+  { name: 'Taurus', glyph: '♉', month: 4, startDay: 20 }, { name: 'Gemini', glyph: '♊', month: 5, startDay: 21 },
+  { name: 'Cancer', glyph: '♋', month: 6, startDay: 21 }, { name: 'Leo', glyph: '♌', month: 7, startDay: 23 },
+  { name: 'Virgo', glyph: '♍', month: 8, startDay: 23 }, { name: 'Libra', glyph: '♎', month: 9, startDay: 23 },
+  { name: 'Scorpio', glyph: '♏', month: 10, startDay: 23 }, { name: 'Sagittarius', glyph: '♐', month: 11, startDay: 22 },
+];
+function zodiacSign(month, day) {
+  if (!month || !day) return null;
+  for (let i = 0; i < ZODIAC.length; i++) {
+    const cur = ZODIAC[i], next = ZODIAC[(i + 1) % ZODIAC.length];
+    if (month === cur.month && day >= cur.startDay) return { name: cur.name, glyph: cur.glyph };
+    if (month === next.month && day < next.startDay) return { name: cur.name, glyph: cur.glyph };
+  }
+  return null;
+}
+const BIRTHSTONES = {
+  1: { name: 'Garnet', color: '#7B1E3B' }, 2: { name: 'Amethyst', color: '#8A5CC4' }, 3: { name: 'Aquamarine', color: '#7FD4D1' },
+  4: { name: 'Diamond', color: '#B9C6D0' }, 5: { name: 'Emerald', color: '#2E9E5B' }, 6: { name: 'Pearl', color: '#D9CBB0' },
+  7: { name: 'Ruby', color: '#C21F45' }, 8: { name: 'Peridot', color: '#9BC24A' }, 9: { name: 'Sapphire', color: '#22448C' },
+  10: { name: 'Opal', color: '#B39BD8' }, 11: { name: 'Topaz', color: '#E39A28' }, 12: { name: 'Turquoise', color: '#3AB0C4' },
+};
+const birthstone = (month) => BIRTHSTONES[month] || null;
+
+const ROTATE_OPTIONS = [{ key: 'minute', label: 'Every minute', seconds: 60 }, { key: 'hour', label: 'Every hour', seconds: 3600 }, { key: 'day', label: 'Every day', seconds: 86400 }];
+const secondsFor = (key) => (ROTATE_OPTIONS.find((o) => o.key === key)?.seconds ?? 86400);
+// Which of the (up to 5) profile photos to show right now — derived from the
+// wall clock, so it rotates on the user's chosen timer. Ported from the app.
+function activeAvatarUri(u) {
+  const photos = (u?.avatarPhotos || []).filter(Boolean);
+  if (!photos.length) return u?.avatarUri || null;
+  if (photos.length === 1) return photos[0];
+  return photos[Math.floor(Date.now() / 1000 / secondsFor(u?.avatarRotate)) % photos.length];
+}
+
+const hexBright = (hex) => {
+  const h = (hex || '').replace('#', '');
+  if (h.length < 6) return 200;
+  return 0.299 * parseInt(h.slice(0, 2), 16) + 0.587 * parseInt(h.slice(2, 4), 16) + 0.114 * parseInt(h.slice(4, 6), 16);
+};
+const textOn = (hex) => (hexBright(hex) > 145 ? '#21201c' : '#FDF8EA');
+
+// The 4-quarter profile wheel: Sign · Birthstone · Favorite number · Favorite
+// color. Top/right/bottom are user-colourable; the left quarter IS the person's
+// favorite color. Personal accounts only (businesses have no zodiac).
+function wheelSvg(u) {
+  if (u.accountType === 'business') return '';
+  const sign = zodiacSign(u.birthMonth, u.birthDay);
+  const stone = birthstone(u.birthMonth);
+  const wc = u.wheelColors || {};
+  const cx = 150, cy = 150, R = 146, rl = 0.56 * R;
+  const rad = (d) => (d * Math.PI) / 180;
+  const pt = (a) => [cx + R * Math.cos(rad(a)), cy + R * Math.sin(rad(a))];
+  const wedge = (a1, a2) => { const [x1, y1] = pt(a1), [x2, y2] = pt(a2); return `M${cx},${cy} L${x1.toFixed(1)},${y1.toFixed(1)} A${R},${R} 0 0 1 ${x2.toFixed(1)},${y2.toFixed(1)} Z`; };
+  const numVal = u.favoriteNumber == null || u.favoriteNumber === '' ? '—' : String(u.favoriteNumber);
+  const secs = [
+    { path: wedge(225, 315), tx: cx, ty: cy - rl, fill: wc.sign || '#4E6E9E', head: 'Sign', val: sign ? `${sign.glyph} ${sign.name}` : '—' },
+    { path: wedge(315, 405), tx: cx + rl, ty: cy, fill: wc.stone || (stone ? stone.color : '#8A8FA6'), head: 'Birthstone', val: stone ? stone.name : '—' },
+    { path: wedge(45, 135), tx: cx, ty: cy + rl, fill: wc.number || '#D8B15E', head: 'Favorite number', val: numVal },
+    { path: wedge(135, 225), tx: cx - rl, ty: cy, fill: u.favoriteColor || '#B9B2A0', head: '', val: 'Favorite color' },
+  ];
+  const slices = secs.map((s) => {
+    const tc = textOn(s.fill);
+    return `<path d="${s.path}" fill="${esc(s.fill)}" stroke="#FDF8EA" stroke-width="2.5"/>
+      <text x="${s.tx}" y="${s.ty}" text-anchor="middle" fill="${tc}" font-family="Georgia, serif">
+        ${s.head ? `<tspan x="${s.tx}" dy="-7" font-size="11" letter-spacing="1.2" opacity="0.9">${esc(s.head.toUpperCase())}</tspan>` : ''}
+        <tspan x="${s.tx}" dy="${s.head ? '19' : '0'}" font-size="18" font-weight="700">${esc(s.val)}</tspan>
+      </text>`;
+  }).join('');
+  return `<svg viewBox="0 0 300 300" class="wheel" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Profile wheel">
+    ${slices}
+    <circle cx="${cx}" cy="${cy}" r="30" fill="#FDF8EA" stroke="#1B4B8F" stroke-width="1.5"/>
+    <circle cx="${cx}" cy="${cy}" r="26" fill="none" stroke="#FFC93C" stroke-width="1.2"/>
+  </svg>`;
+}
+
+const state = { user: null, blocked: new Set(), spotTimer: null, avatarTimer: null };
+
+// Rotate the monument photo among the person's (up to 5) photos on their timer.
+function startAvatarRotation(u) {
+  clearInterval(state.avatarTimer);
+  if (!(u?.avatarPhotos && u.avatarPhotos.length > 1)) return;
+  state.avatarTimer = setInterval(() => {
+    const img = document.querySelector('.monument-photo .mp-img');
+    if (!img) { clearInterval(state.avatarTimer); return; }
+    const next = activeAvatarUri(u);
+    if (next && img.getAttribute('src') !== next) img.setAttribute('src', next);
+  }, 12000);
+}
 const el = (id) => document.getElementById(id);
 const root = () => el('app-root');
 const initials = (name) => (name || '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
@@ -74,25 +164,36 @@ const placeLabel = (m) => {
 const setLoading = () => { root().innerHTML = '<div class="spinner"></div>'; };
 const avatarImg = (u, cls = '') => (u.avatarUri ? `<img class="${cls}" src="${esc(u.avatarUri)}" alt="">` : `<span class="${cls}">${esc(initials(u.name))}</span>`);
 
+// Refined inline line-icons (no emoji) — one visual language across the app.
+const ICONS = {
+  journey: '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v15H5.5A1.5 1.5 0 0 0 4 20.5V5.5Z"/><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v15h5.5A1.5 1.5 0 0 1 20 20.5V5.5Z"/>',
+  world: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.4 2.3 2.4 14.7 0 17M12 3.5c-2.4 2.3-2.4 14.7 0 17"/>',
+  circle: '<circle cx="8.5" cy="8" r="3"/><path d="M3.5 18.5a5 5 0 0 1 10 0"/><path d="M15.5 6.2a3 3 0 0 1 0 5.6"/><path d="M16.8 13.6a5 5 0 0 1 3 4.9"/>',
+  bell: '<path d="M6.5 9.5a5.5 5.5 0 0 1 11 0c0 4.5 1.8 5.5 1.8 5.5H4.7s1.8-1 1.8-5.5Z"/><path d="M10 19a2 2 0 0 0 4 0"/>',
+  user: '<circle cx="12" cy="8" r="3.5"/><path d="M5.5 19.5a6.5 6.5 0 0 1 13 0"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+};
+const icon = (name, size = 20) => `<svg class="ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+
 // ---- Top navigation (bold, centered) --------------------------------------
 function renderTopbar(active, unread = 0) {
   const bar = el('topbar');
   if (!state.user) { bar.innerHTML = ''; return; }
   const tab = (hash, ic, label, key) =>
-    `<a class="nav-tab ${active === key ? 'active' : ''}" href="${hash}"><span class="ic">${ic}</span>${label}</a>`;
+    `<a class="nav-tab ${active === key ? 'active' : ''}" href="${hash}"><span class="ic">${icon(ic)}</span>${label}</a>`;
   const meAvatar = state.user.avatarUri
     ? `<img class="avatar-mini" src="${esc(state.user.avatarUri)}" alt="Me">`
-    : '👤';
+    : icon('user', 22);
   bar.innerHTML = `
     <div class="nav-inner">
       <a class="nav-brand" href="#/journey"><img src="../brand/eternity-vault-mark.svg" alt=""><span>Eternity Vault</span></a>
       <nav class="nav-primary">
-        ${tab('#/journey', '📖', 'Journey', 'journey')}
-        ${tab('#/world', '🌍', 'World', 'world')}
-        ${tab('#/circle', '🤝', 'Circle', 'circle')}
+        ${tab('#/journey', 'journey', 'Journey', 'journey')}
+        ${tab('#/world', 'world', 'World', 'world')}
+        ${tab('#/circle', 'circle', 'Circle', 'circle')}
       </nav>
       <div class="nav-actions">
-        <a class="nav-icon ${active === 'notifications' ? 'active' : ''}" href="#/notifications" title="Notifications">🔔${unread ? `<span class="badge">${unread > 9 ? '9+' : unread}</span>` : ''}</a>
+        <a class="nav-icon ${active === 'notifications' ? 'active' : ''}" href="#/notifications" title="Notifications">${icon('bell', 22)}${unread ? `<span class="badge">${unread > 9 ? '9+' : unread}</span>` : ''}</a>
         <a class="nav-icon ${active === 'profile' || active === 'settings' ? 'active' : ''}" href="#/profile" title="Me">${meAvatar}</a>
       </div>
     </div>`;
@@ -256,22 +357,25 @@ function monumentHTML(u, moments, circleCount, isSelf) {
   if (u.birthMonth && u.birthDay && u.birthYear) birthBits.push(`${MONTHS[u.birthMonth]} ${u.birthDay}, ${u.birthYear}`);
   else if (u.birthYear) birthBits.push(String(u.birthYear));
   if (u.hometown) birthBits.push(u.hometown);
-  const ring = u.favoriteColor ? `style="background:${esc(u.favoriteColor)}"` : '';
-  const avatar = u.avatarUri ? `<img src="${esc(u.avatarUri)}" alt="">` : `<div class="ph">${esc(initials(u.name))}</div>`;
+  const photo = activeAvatarUri(u);
+  const photoInner = photo ? `<img class="mp-img" src="${esc(photo)}" alt="">` : `<div class="mp-ph">${esc(initials(u.name))}</div>`;
+  const wheel = wheelSvg(u);
   return `
     <div class="monument">
-      <div class="avatar-ring" ${ring}>${avatar}</div>
+      <div class="monument-photo">${photoInner}</div>
       <h1>${esc(u.name || 'Unnamed')}</h1>
       <div class="handle">@${esc(u.handle || '')}</div>
       <div>${business ? '<span class="chip">Business</span>' : ''}${sealed ? '<span class="chip sealed">✦ Kept as they left it</span>' : ''}</div>
       ${u.epitaph ? `<div class="epitaph">“${esc(u.epitaph)}”</div>` : isSelf ? `<div class="epitaph muted"><a href="#/profile/edit">+ add an epitaph</a></div>` : ''}
       ${birthBits.length ? `<div class="birthline">${bornWord} ${esc(birthBits.join(' · '))}</div>` : ''}
       ${u.bio ? `<p style="max-width:480px;margin:14px auto 0;">${esc(u.bio)}</p>` : isSelf ? `<p class="muted" style="margin-top:10px;"><a href="#/profile/edit">+ add a short bio</a></p>` : ''}
+      ${u.links && u.links.length ? `<div class="prof-links">${u.links.map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noopener" class="prof-link">${esc(l.label || l.url)}</a>`).join('')}</div>` : ''}
       <div class="stats">
         <div class="stat"><div class="n">${moments.length}</div><div class="l">Moments</div></div>
         <div class="stat"><div class="n">${years}</div><div class="l">Years</div></div>
         <div class="stat"><div class="n">${circleCount}</div><div class="l">Circle</div></div>
       </div>
+      ${wheel ? `<div class="wheel-wrap">${wheel}${isSelf ? '<div style="text-align:center;margin-top:8px;"><a href="#/profile/edit" style="font-size:0.85rem;color:var(--muted);">Customize your wheel &amp; photos →</a></div>' : ''}</div>` : ''}
     </div>`;
 }
 
@@ -356,7 +460,7 @@ function timelineHTML(moments, owner) {
     lastDecade = decade;
     let age = '';
     if (owner?.birthYear) { const n = year - owner.birthYear; age = business ? `Year ${n + 1}` : n >= 0 ? `Age ${n}` : ''; }
-    html += `<div class="jchapter ${isDecade ? 'decade' : ''}" ${isDecade ? `data-decade="${decade}s"` : ''}><div class="yr">${year}</div>${age ? `<span class="age">${esc(age)}</span>` : ''}</div>`;
+    html += `<div class="jchapter ${isDecade ? 'decade' : ''}" id="yr-${year}" ${isDecade ? `data-decade="${decade}s"` : ''}><div class="yr">${year}</div>${age ? `<span class="age">${esc(age)}</span>` : ''}</div>`;
     for (const m of list) html += momentCardHTML(m);
   }
   return html + '<div class="cap"><img src="../brand/eternity-vault-mark.svg" alt=""></div></div>';
@@ -387,6 +491,65 @@ function mountFilteredTimeline(hostId, chipsId, moments, owner) {
   render();
 }
 
+// A summary band across the top of a journey: totals + the places and people.
+function journeySummary(moments) {
+  const places = [...new Set(moments.map(placeLabel).filter(Boolean))];
+  const compMap = new Map();
+  for (const m of moments) for (const t of m.tags || []) { const k = t.userId || 'lbl:' + t.label; if (!compMap.has(k)) compMap.set(k, t.label); }
+  const companions = [...compMap.values()];
+  return `<div class="jsummary">
+    <div class="jsum-nums">
+      <div class="jn"><span class="v">${moments.length}</span><span class="l">Moments</span></div>
+      <div class="jn"><span class="v">${places.length}</span><span class="l">Places</span></div>
+      <div class="jn"><span class="v">${companions.length}</span><span class="l">Companions</span></div>
+    </div>
+    ${places.length ? `<div class="jsum-chips"><span class="cap">Places</span>${places.slice(0, 30).map((p) => `<span class="jchip">📍 ${esc(p)}</span>`).join('')}</div>` : ''}
+    ${companions.length ? `<div class="jsum-chips"><span class="cap">Companions</span>${companions.slice(0, 30).map((c) => `<span class="jchip">${esc(c)}</span>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+// A horizontal timeline scrubber: one bar per year from birth → now, height by
+// how many moments happened that year. Click a year to jump to it.
+function timelineMapHTML(moments, owner) {
+  const years = moments.map((m) => m.year);
+  if (!years.length) return '';
+  const minY = Math.min(owner?.birthYear || Math.min(...years), ...years);
+  const maxY = Math.max(new Date().getFullYear(), ...years);
+  const counts = {};
+  for (const m of moments) counts[m.year] = (counts[m.year] || 0) + 1;
+  const milestoneYears = new Set(moments.filter((m) => m.milestone).map((m) => m.year));
+  const maxC = Math.max(...Object.values(counts));
+  let bars = '';
+  for (let y = minY; y <= maxY; y++) {
+    const c = counts[y] || 0;
+    const h = c ? Math.round(22 + (c / maxC) * 78) : 6;
+    const mile = milestoneYears.has(y);
+    bars += `<div class="tmap-bar ${c ? 'has' : ''} ${mile ? 'mile' : ''}" data-year="${y}" title="${y}: ${c} moment${c === 1 ? '' : 's'}${mile ? ' · major moment' : ''}" style="height:${h}%">${mile ? '<i class="mdot"></i>' : ''}</div>`;
+  }
+  return `<div class="tmap">
+    <div class="tmap-head"><span>${owner?.birthYear ? 'Born ' + minY : minY}</span><span class="tmap-total">${moments.length} moments · ${maxY - minY} years</span><span>${maxY}</span></div>
+    <div class="tmap-track">${bars}</div>
+  </div>`;
+}
+
+// A slim decade jump-rail fixed to the right edge (only when 2+ decades).
+function decadeRailHTML(moments) {
+  const decades = [...new Set(moments.map((m) => Math.floor(m.year / 10) * 10))].sort((a, b) => a - b);
+  if (decades.length < 2) return '';
+  return `<div class="decade-rail">${decades.map((d) => `<button class="drail" data-decade="${d}">'${String(d).slice(2)}s</button>`).join('')}</div>`;
+}
+
+// Wire the map + rail so clicking a year/decade smooth-scrolls to that chapter.
+function wireJumpNav(moments) {
+  const scrollToYear = (y) => { const el = document.getElementById(`yr-${y}`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  root().querySelectorAll('.tmap-bar.has').forEach((b) => (b.onclick = () => scrollToYear(b.getAttribute('data-year'))));
+  root().querySelectorAll('.drail').forEach((b) => (b.onclick = () => {
+    const d = +b.getAttribute('data-decade');
+    const y = moments.map((m) => m.year).filter((yr) => Math.floor(yr / 10) * 10 === d).sort((a, b) => a - b)[0];
+    if (y) scrollToYear(y);
+  }));
+}
+
 // ---- My Journey ------------------------------------------------------------
 async function viewJourney() {
   const unread = await api.unreadCount(state.user.id).catch(() => 0);
@@ -394,19 +557,21 @@ async function viewJourney() {
   setLoading();
   const [moments, circleCount] = await Promise.all([api.getMomentsOf(state.user.id), api.fetchCircleCountOf(state.user.id)]);
   const sealed = state.user.memorialState === 'sealed';
-  const bg = bgColor(state.user.journeyBg);
   root().innerHTML = `
-    <div class="wrap">
+    <div class="wrap journeywide">
       ${monumentHTML(state.user, moments, circleCount, true)}
-      ${!sealed ? `<div class="btn-row"><a class="btn" href="#/add">+ Add a moment</a><a class="btn ghost" href="#/profile/edit">Edit profile</a></div>` : ''}
-      <div class="section-title">Your Journey</div>
-      ${moments.length ? `${viewChipsHTML('jv-chips')}<div id="jv-host"></div>`
+      ${moments.length ? journeySummary(moments) : ''}
+      ${moments.length ? timelineMapHTML(moments, state.user) : ''}
+      ${!sealed ? `<div class="btn-row"><a class="btn" href="#/add">+ Add a moment</a><a class="btn ghost" href="#/profile/edit">Edit profile</a><a class="btn ghost" href="#/profile/customize">Customize</a></div>` : ''}
+      <div class="section-title" style="text-align:center;">Your Journey</div>
+      ${moments.length ? `${viewChipsHTML('jv-chips')}${decadeRailHTML(moments)}<div id="jv-host"></div>`
         : `<div class="empty"><div class="big">🌱</div>Your journey is empty.<br>Add the first moment of your life's record.
            <div style="margin-top:18px;"><a class="btn" href="#/add">+ Add a moment</a></div></div>`}
       ${appFooter()}
     </div>
     ${!sealed ? '<button class="fab" onclick="location.hash=\'#/add\'" title="Add a moment">+</button>' : ''}`;
-  if (moments.length) mountFilteredTimeline('jv-host', 'jv-chips', moments, state.user);
+  if (moments.length) { mountFilteredTimeline('jv-host', 'jv-chips', moments, state.user); wireJumpNav(moments); }
+  startAvatarRotation(state.user);
 }
 
 // ---- Person (someone else's journey) ---------------------------------------
@@ -427,20 +592,23 @@ async function viewPerson(handle) {
   const [moments, circleCount, circlePairs] = await Promise.all([api.getMomentsOf(u.id), api.fetchCircleCountOf(u.id), api.fetchCircleOf(state.user.id)]);
   const inCircle = circlePairs.some((p) => (p.a === state.user.id && p.b === u.id) || (p.b === state.user.id && p.a === u.id));
   root().innerHTML = `
-    <div class="wrap">
+    <div class="wrap journeywide">
       <a class="back" href="#/world">← World</a>
       ${monumentHTML(u, moments, circleCount, false)}
+      ${moments.length ? journeySummary(moments) : ''}
+      ${moments.length ? timelineMapHTML(moments, u) : ''}
       <div class="btn-row">
         <button class="btn ${inCircle ? 'ghost' : ''}" id="circle-btn">${inCircle ? 'In your Circle ✓' : '+ Add to Circle'}</button>
         <button class="btn ghost sm" id="share-btn">📷 Send / Request</button>
         <button class="btn ghost sm" id="report-btn">⚑ Report</button>
         <button class="btn danger sm" id="block-btn">Block</button>
       </div>
-      <div class="section-title">${esc(u.name?.split(' ')[0] || 'Their')}'s Journey</div>
-      ${moments.length ? `${viewChipsHTML('pv-chips')}<div id="pv-host"></div>` : '<div class="empty">No moments yet.</div>'}
+      <div class="section-title" style="text-align:center;">${esc(u.name?.split(' ')[0] || 'Their')}'s Journey</div>
+      ${moments.length ? `${viewChipsHTML('pv-chips')}${decadeRailHTML(moments)}<div id="pv-host"></div>` : '<div class="empty">No moments yet.</div>'}
       ${appFooter()}
     </div>`;
-  if (moments.length) mountFilteredTimeline('pv-host', 'pv-chips', moments, u);
+  if (moments.length) { mountFilteredTimeline('pv-host', 'pv-chips', moments, u); wireJumpNav(moments); }
+  startAvatarRotation(u);
   $('#circle-btn').onclick = async () => {
     const btn = $('#circle-btn'); btn.disabled = true;
     try { inCircle ? await api.removeFromCircle(state.user.id, u.id) : await api.addToCircle(state.user, u.id); viewPerson(handle); }
@@ -454,6 +622,25 @@ async function viewPerson(handle) {
   };
 }
 
+// A rotating spotlight on one member's journey (World page).
+function renderSpotlight(s) {
+  const w = $('#spotlight-wrap');
+  if (!w) return;
+  if (!s) { w.innerHTML = ''; return; }
+  w.innerHTML = `<div class="spotlight" data-handle="${esc(s.handle)}">
+    <div class="spot-label">✦ Spotlight</div>
+    <div class="spot-body">
+      <div class="spot-pfp">${s.avatarUri ? `<img src="${esc(s.avatarUri)}" alt="">` : esc(initials(s.name))}</div>
+      <div class="spot-info">
+        <div class="spot-name">${esc(s.name)}</div>
+        <div class="spot-handle">@${esc(s.handle)}</div>
+        <div class="spot-sub">A life worth a look — a new one every little while.</div>
+      </div>
+      ${s.photoUrl ? `<div class="spot-photo"><img src="${esc(s.photoUrl)}" alt=""></div>` : ''}
+    </div></div>`;
+  w.querySelector('.spotlight').onclick = () => nav(`#/u/${s.handle}`);
+}
+
 // ---- World -----------------------------------------------------------------
 async function viewWorld() {
   const unread = await api.unreadCount(state.user.id).catch(() => 0);
@@ -462,11 +649,23 @@ async function viewWorld() {
     <div class="wrap">
       <div class="eyebrow">Eternity Vault</div>
       <div class="section-title" style="margin-top:2px;">World</div>
+      <div id="spotlight-wrap"></div>
       <div class="field"><input id="search" placeholder="Search people and businesses by name or @handle"></div>
+      <div class="viewrow" id="world-filter" style="max-width:420px;">
+        <button class="viewchip active" data-wf="all">All</button>
+        <button class="viewchip" data-wf="personal">People</button>
+        <button class="viewchip" data-wf="business">Businesses</button>
+      </div>
       <div id="trending-wrap"></div>
       <div id="results"></div>
       ${appFooter()}
     </div>`;
+  renderSpotlight(await api.getJourneySpotlight(state.blocked).catch(() => null));
+  clearInterval(state.spotTimer);
+  state.spotTimer = setInterval(async () => {
+    if (!location.hash.startsWith('#/world')) { clearInterval(state.spotTimer); return; }
+    renderSpotlight(await api.getJourneySpotlight(state.blocked).catch(() => null));
+  }, 10 * 60 * 1000);
   const trending = (await api.getTrendingProfiles().catch(() => [])).filter((t) => !state.blocked.has(t.id));
   if (trending.length) {
     $('#trending-wrap').innerHTML = `<div class="eyebrow" style="font-size:1.3rem;">🔥 Trending now</div>
@@ -475,14 +674,23 @@ async function viewWorld() {
         <div class="nm">${esc(t.name?.split(' ')[0] || t.handle)}</div><div class="vc">${t.viewCount} views</div></div>`).join('')}</div>`;
     $('#trending-wrap').querySelectorAll('[data-handle]').forEach((c) => (c.onclick = () => nav(`#/u/${c.getAttribute('data-handle')}`)));
   }
+  let worldFilter = 'all';
+  let lastQuery = '';
   const doSearch = async (q) => {
+    lastQuery = q;
     $('#results').innerHTML = '<div class="spinner"></div>';
-    const people = (await api.searchOthers(state.user.id, q)).filter((u) => !state.blocked.has(u.id));
+    let people = (await api.searchOthers(state.user.id, q)).filter((u) => !state.blocked.has(u.id));
+    if (worldFilter !== 'all') people = people.filter((u) => (u.accountType || 'personal') === worldFilter);
     $('#results').innerHTML = people.length
       ? `<div class="section-title">${q ? 'Results' : 'Recently joined'}</div>` + people.map(personRowHTML).join('')
       : '<div class="empty">No one found. Try another name.</div>';
     $('#results').querySelectorAll('[data-handle]').forEach((c) => (c.onclick = () => nav(`#/u/${c.getAttribute('data-handle')}`)));
   };
+  root().querySelectorAll('#world-filter .viewchip').forEach((c) => (c.onclick = () => {
+    worldFilter = c.getAttribute('data-wf');
+    root().querySelectorAll('#world-filter .viewchip').forEach((x) => x.classList.toggle('active', x === c));
+    doSearch(lastQuery);
+  }));
   let t;
   $('#search').oninput = (e) => { clearTimeout(t); t = setTimeout(() => doSearch(e.target.value), 260); };
   doSearch('');
@@ -505,15 +713,33 @@ async function viewCircle() {
   const ids = [...new Set(pairs.map((p) => (p.a === state.user.id ? p.b : p.a)))].filter((id) => !state.blocked.has(id));
   const people = [];
   for (const id of ids) { const u = await api.fetchUserById(id); if (u) people.push(u); }
+  const nameMap = new Map(people.map((p) => [p.id, p]));
+  const feed = ids.length ? await api.getRecentMomentsOf(ids) : [];
+  const feedItem = (m) => {
+    const owner = nameMap.get(m.ownerId);
+    const thumb = m.photos && m.photos[0];
+    return `<div class="feed-item" data-moment="${esc(m.id)}">
+      <div class="feed-pfp">${owner?.avatarUri ? `<img src="${esc(owner.avatarUri)}" alt="">` : esc(initials(owner?.name || '?'))}</div>
+      <div class="feed-body">
+        <div class="feed-who"><strong>${esc(owner?.name || 'Someone')}</strong> added <strong>${esc(m.title || 'a moment')}</strong> <span class="muted">· ${esc(fullDate(m))}</span></div>
+        ${m.caption ? `<div class="muted" style="font-size:0.92rem;">${esc(m.caption)}</div>` : ''}
+      </div>
+      ${thumb ? `<div class="feed-thumb"><img src="${esc(thumb)}" loading="lazy" alt=""></div>` : ''}
+    </div>`;
+  };
   root().innerHTML = `
     <div class="wrap">
       <div class="section-title">Your Circle</div>
-      <p class="muted">The people whose lives are woven with yours.</p>
+      ${feed.length ? `<div class="eyebrow" style="font-size:1.3rem;">Latest from your Circle</div>
+        <div class="feed">${feed.map(feedItem).join('')}</div>` : ''}
+      <div class="section-title" style="font-size:1.3rem;">Members</div>
+      <p class="muted" style="margin-top:0;">The people whose lives are woven with yours.</p>
       ${people.length ? people.map(personRowHTML).join('')
-        : `<div class="empty"><div class="big">🤝</div>Your Circle is empty.<br>Find people in the <a href="#/world">World</a>.</div>`}
+        : `<div class="empty"><div class="big">✦</div>Your Circle is empty.<br>Find people in the <a href="#/world">World</a>.</div>`}
       ${appFooter()}
     </div>`;
   root().querySelectorAll('[data-handle]').forEach((c) => (c.onclick = () => nav(`#/u/${c.getAttribute('data-handle')}`)));
+  root().querySelectorAll('.feed-item').forEach((c) => (c.onclick = () => nav(`#/moment/${c.getAttribute('data-moment')}`)));
 }
 
 // ---- Notifications ---------------------------------------------------------
@@ -555,6 +781,9 @@ async function viewMoment(id) {
   const frozen = owner?.memorialState === 'sealed';
   renderTopbar(isOwner ? 'journey' : 'world');
   const [comments, contributions] = await Promise.all([api.getComments(id), api.getContributions(id)]);
+  const myTag = (m.tags || []).find((t) => t.userId === state.user.id);
+  const canConfirm = !!myTag && !myTag.confirmed && !isOwner && !frozen;
+  const adoptedCopyId = !isOwner ? await api.getAdoptedCopyId(state.user.id, id).catch(() => null) : null;
   const loc = placeLabel(m);
   const photosHTML = (m.photos || []).length ? `<div class="gallery-full">${m.photos.map((p) => `<img src="${esc(p)}" loading="lazy" alt="">`).join('')}</div>` : '';
   root().innerHTML = `
@@ -571,6 +800,10 @@ async function viewMoment(id) {
         ${loc ? `<div class="m-loc" style="color:var(--muted);margin-top:12px;">📍 ${m.placeLat ? `<a href="https://maps.google.com/?q=${m.placeLat},${m.placeLng}" target="_blank" rel="noopener">${esc(loc)}</a>` : esc(loc)}</div>` : ''}
         ${(m.tags || []).length ? `<div class="tags" style="margin-top:14px;">${m.tags.map((t) => `<span class="tag witnessed" style="background:${t.confirmed ? 'var(--gold)' : 'rgba(27,75,143,0.1)'};color:var(--blue-deep)">${t.confirmed ? '✓ ' : ''}${esc(t.label)}</span>`).join('')}</div>` : ''}
         <div class="btn-row" style="justify-content:flex-start;margin-top:18px;">
+          ${canConfirm ? `<button class="btn gold sm" id="confirm-tag">✓ I was there</button>` : ''}
+          ${!isOwner && !adoptedCopyId ? `<button class="btn ghost sm" id="adopt">+ Add to my Journey</button>` : ''}
+          ${!isOwner && adoptedCopyId ? `<a class="btn ghost sm" href="#/moment/${esc(adoptedCopyId)}">In your Journey ✓</a>` : ''}
+          ${!isOwner && myTag && !frozen ? `<button class="btn ghost sm" id="add-side">+ Add your side</button>` : ''}
           ${isOwner && !frozen ? `<a class="btn ghost sm" href="#/edit/${esc(m.id)}">Edit</a><button class="btn danger sm" id="del-moment">Delete</button>` : ''}
           ${!isOwner ? `<button class="btn ghost sm" id="report-moment">⚑ Report</button>` : ''}
         </div>
@@ -584,7 +817,7 @@ async function viewMoment(id) {
       <div class="section-title">Comments</div>
       ${frozen ? '<div class="notice">This journey is sealed and kept as they left it. It can be read, but not added to.</div>' : `
         <form id="comment-form" style="display:flex;gap:8px;margin-bottom:16px;"><input name="text" placeholder="Leave a comment…" style="flex:1" required><button class="btn" type="submit">Post</button></form>`}
-      <div id="comments">${comments.length ? comments.map((c) => `<div class="comment"><span class="who">${esc(c.name)}</span>${c.pinned ? ' 📌' : ''}<span class="when">${timeAgo(c.createdAt)}</span><div>${esc(c.text)}</div></div>`).join('') : '<div class="muted">No comments yet.</div>'}</div>
+      <div id="comments">${comments.length ? comments.map((c) => `<div class="comment"><span class="who">${esc(c.name)}</span>${c.pinned ? ' 📌' : ''}<span class="when">${timeAgo(c.createdAt)}</span><div>${esc(c.text)}</div>${(isOwner || c.userId === state.user.id) ? `<div class="comment-tools">${isOwner ? `<button class="linkbtn" data-pin="${esc(c.id)}" data-pinned="${c.pinned ? 1 : 0}">${c.pinned ? 'Unpin' : 'Pin'}</button>` : ''}<button class="linkbtn" data-delc="${esc(c.id)}">Delete</button></div>` : ''}</div>`).join('') : '<div class="muted">No comments yet.</div>'}</div>
       ${appFooter()}
     </div>`;
   if (isOwner && !frozen) {
@@ -600,6 +833,45 @@ async function viewMoment(id) {
     e.target.querySelector('button').disabled = true;
     try { await api.addComment(state.user, id, text); viewMoment(id); } catch (err) { alert(err.message); e.target.querySelector('button').disabled = false; }
   };
+  const cb = $('#confirm-tag');
+  if (cb) cb.onclick = async () => { cb.disabled = true; try { await api.confirmTag(state.user, id, m.ownerId); viewMoment(id); } catch (e) { alert(e.message); cb.disabled = false; } };
+  const ab = $('#adopt');
+  if (ab) ab.onclick = async () => { ab.disabled = true; ab.textContent = 'Adding…'; try { await api.adoptMoment(state.user, id); viewMoment(id); } catch (e) { alert(e.message); ab.disabled = false; ab.textContent = '+ Add to my Journey'; } };
+  const as = $('#add-side');
+  if (as) as.onclick = () => openContribution(id);
+  root().querySelectorAll('[data-pin]').forEach((b) => (b.onclick = async () => { await api.togglePinComment(b.getAttribute('data-pin'), b.getAttribute('data-pinned') !== '1'); viewMoment(id); }));
+  root().querySelectorAll('[data-delc]').forEach((b) => (b.onclick = async () => { if (!confirm('Delete this comment?')) return; await api.deleteComment(b.getAttribute('data-delc')); viewMoment(id); }));
+}
+
+// A witnessed companion adds their own side (note + photos) to a moment.
+function openContribution(momentId) {
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  const files = [];
+  const draw = () => {
+    back.innerHTML = `<div class="modal">
+      <h2>Add your side of the story</h2>
+      <div id="ct-msg"></div>
+      <form id="ct-form">
+        <div class="field"><label>Your telling</label><textarea name="note" placeholder="What do you remember from that day?"></textarea></div>
+        <div class="field"><label>Your photos (optional)</label><input type="file" id="ct-files" accept="image/*,video/*" multiple>
+          <div class="photo-preview" id="ct-prev">${files.map((f, i) => `<div class="pp"><img src="${URL.createObjectURL(f)}"><button type="button" class="rm" data-i="${i}">×</button></div>`).join('')}</div></div>
+        <div class="btn-row" style="justify-content:flex-end;"><button type="button" class="btn ghost sm" id="ct-cancel">Cancel</button><button type="submit" class="btn sm">Add</button></div>
+      </form></div>`;
+    $('#ct-cancel', back).onclick = () => back.remove();
+    $('#ct-files', back).onchange = (e) => { for (const f of e.target.files) files.push(f); draw(); };
+    back.querySelectorAll('[data-i]').forEach((b) => (b.onclick = () => { files.splice(+b.getAttribute('data-i'), 1); draw(); }));
+    $('#ct-form', back).onsubmit = async (e) => {
+      e.preventDefault();
+      const note = new FormData(e.target).get('note');
+      const btn = $('#ct-form button[type=submit]', back); btn.disabled = true; btn.textContent = 'Saving…';
+      try { await api.addOrUpdateContribution(state.user, momentId, { photos: files, note }); back.remove(); viewMoment(momentId); }
+      catch (err) { $('#ct-msg', back).innerHTML = `<div class="error">${esc(err.message)}</div>`; btn.disabled = false; btn.textContent = 'Add'; }
+    };
+  };
+  back.onclick = (e) => { if (e.target === back) back.remove(); };
+  document.body.appendChild(back);
+  draw();
 }
 
 // ---- Add / edit a moment ---------------------------------------------------
@@ -642,6 +914,7 @@ async function viewMomentForm(existingId) {
           <div class="hint">United States for now — we'll add more countries soon.</div>
         </div>
         <div class="field"><label>Milestone</label><select name="milestone">${MILESTONE_OPTS.map(([v, l]) => `<option value="${v}" ${m && (m.milestone || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div class="field"><label>Seal as a time capsule <span class="muted">— optional; stays hidden until this date</span></label><input name="sealedUntil" type="date" value="${m && m.sealedUntil ? esc(m.sealedUntil) : ''}"></div>
         <div class="field"><label>People who were there</label><input name="tags" value="${m ? esc((m.tags || []).map((t) => (t.handle ? '@' + t.handle : t.label)).join(', ')) : ''}" placeholder="Mom, @davidk, the whole crew">
           <div class="hint">Separate with commas. Use @handle to link a real member.</div></div>
         <div class="field"><label>Photos</label><input type="file" id="photo-input" accept="image/*,video/*" multiple><div class="photo-preview" id="preview"></div></div>
@@ -692,6 +965,7 @@ async function viewMomentForm(existingId) {
         year: +f.get('year'), month: f.get('month') ? +f.get('month') : null, day: f.get('day') ? +f.get('day') : null,
         title: f.get('title'), caption: f.get('caption'), story: f.get('story'),
         location: locationText, place, milestone: f.get('milestone') || null,
+        sealedUntil: f.get('sealedUntil') || null,
         photos: [...keptPhotos, ...pendingFiles], tags,
       };
       if (existingId) {
@@ -714,19 +988,25 @@ async function viewMomentForm(existingId) {
 async function viewProfileEdit() {
   renderTopbar('profile');
   const u = state.user;
-  let avatarFile = null;
+  let photos = [...(u.avatarPhotos || [])].filter(Boolean); // existing URLs to keep
+  const newFiles = []; // freshly picked File objects
   let favColor = u.favoriteColor || '';
+  const business = u.accountType === 'business';
+  const stoneDefault = (birthstone(u.birthMonth)?.color) || '#8A8FA6';
+  const wc = u.wheelColors || {};
+  const total = () => photos.length + newFiles.length;
   root().innerHTML = `
     <div class="wrap">
       <a class="back" href="#/profile">← Back</a>
       <div class="section-title">Edit your profile</div>
       <div id="pf-err"></div>
       <form id="pf-form" class="panel">
-        <div style="text-align:center;margin-bottom:16px;">
-          <div class="avatar-ring" id="av-ring" style="${favColor ? `background:${favColor}` : ''}">
-            ${u.avatarUri ? `<img src="${esc(u.avatarUri)}" alt="">` : `<div class="ph">${esc(initials(u.name))}</div>`}</div>
-          <label class="btn ghost sm" style="cursor:pointer">Change photo<input type="file" id="av-input" accept="image/*" hidden></label>
+        <div class="field"><label>Profile photos <span class="muted">— up to 5, they rotate on a timer</span></label>
+          <div class="photo-preview" id="av-previews"></div>
+          <label class="btn ghost sm" style="cursor:pointer;margin-top:8px;">+ Add photo<input type="file" id="av-input" accept="image/*" multiple hidden></label>
         </div>
+        <div class="field" id="rotate-field" style="display:${total() > 1 ? 'block' : 'none'}"><label>Rotate photos</label>
+          <select id="rotate">${ROTATE_OPTIONS.map((o) => `<option value="${o.key}" ${((u.avatarRotate || 'day') === o.key) ? 'selected' : ''}>${o.label}</option>`).join('')}</select></div>
         <div class="field"><label>Name</label><input name="name" value="${esc(u.name || '')}"></div>
         <div class="field"><label>Epitaph <span class="muted">— a line that captures a life</span></label><input name="epitaph" value="${esc(u.epitaph || '')}" placeholder="She never met a stranger."></div>
         <div class="field"><label>Bio</label><textarea name="bio" placeholder="A few words about you.">${esc(u.bio || '')}</textarea></div>
@@ -736,16 +1016,52 @@ async function viewProfileEdit() {
           <div class="field"><label>Day</label><input name="birthDay" type="number" min="1" max="31" value="${u.birthDay || ''}"></div>
         </div>
         <div class="field"><label>Hometown</label><input name="hometown" value="${esc(u.hometown || '')}" placeholder="Where you're from"></div>
-        <div class="field"><label>Favorite color</label><div style="display:flex;gap:8px;flex-wrap:wrap;" id="colors">
-          ${FAVORITE_COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="width:36px;height:36px;border-radius:50%;border:${favColor === c ? '3px solid var(--ink)' : '2px solid var(--line)'};background:${c}"></button>`).join('')}</div></div>
+        <div class="row">
+          <div class="field"><label>Favorite number</label><input name="favoriteNumber" type="number" value="${u.favoriteNumber ?? ''}" placeholder="e.g. 7"></div>
+          <div class="field"><label>Favorite color</label><div style="display:flex;gap:8px;flex-wrap:wrap;" id="colors">
+            ${FAVORITE_COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="width:34px;height:34px;border-radius:50%;border:${favColor === c ? '3px solid var(--ink)' : '2px solid var(--line)'};background:${c}"></button>`).join('')}</div></div>
+        </div>
+        ${business ? '' : `<div class="field"><label>Your wheel colors <span class="muted">— the Sign, Stone &amp; Number sections</span></label>
+          <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;">
+            <div style="text-align:center;"><input type="color" id="wc-sign" value="${esc(wc.sign || '#4E6E9E')}" style="width:52px;height:40px;padding:2px;"><div class="muted" style="font-size:0.78rem;">Sign</div></div>
+            <div style="text-align:center;"><input type="color" id="wc-stone" value="${esc(wc.stone || stoneDefault)}" style="width:52px;height:40px;padding:2px;"><div class="muted" style="font-size:0.78rem;">Stone</div></div>
+            <div style="text-align:center;"><input type="color" id="wc-number" value="${esc(wc.number || '#D8B15E')}" style="width:52px;height:40px;padding:2px;"><div class="muted" style="font-size:0.78rem;">Number</div></div>
+          </div>
+          <div class="hint">The Favorite-color section always uses your favorite color above.</div></div>`}
+        <div class="field"><label>Links <span class="muted">— up to 5</span></label>
+          <div id="links-wrap"></div>
+          <button type="button" class="btn ghost sm" id="add-link">+ Add link</button></div>
         <button class="btn block" type="submit">Save profile</button>
       </form>
     </div>`;
-  $('#av-input').onchange = (e) => { avatarFile = e.target.files[0]; if (avatarFile) $('#av-ring').innerHTML = `<img src="${URL.createObjectURL(avatarFile)}" alt="">`; };
+  let links = [...(u.links || [])].map((l) => ({ label: l.label || '', url: l.url || '' }));
+  const renderLinks = () => {
+    const w = $('#links-wrap');
+    w.innerHTML = links.map((l, i) => `<div class="row" style="margin-bottom:6px;">
+      <input placeholder="Label" value="${esc(l.label)}" data-li="${i}" data-k="label">
+      <input placeholder="https://…" value="${esc(l.url)}" data-li="${i}" data-k="url">
+      <button type="button" class="btn ghost sm" data-rml="${i}" style="flex:0 0 auto;">×</button></div>`).join('');
+    w.querySelectorAll('input').forEach((inp) => (inp.oninput = () => { links[+inp.getAttribute('data-li')][inp.getAttribute('data-k')] = inp.value; }));
+    w.querySelectorAll('[data-rml]').forEach((b) => (b.onclick = () => { links.splice(+b.getAttribute('data-rml'), 1); renderLinks(); }));
+    $('#add-link').style.display = links.length >= 5 ? 'none' : '';
+  };
+  renderLinks();
+  $('#add-link').onclick = () => { if (links.length < 5) { links.push({ label: '', url: '' }); renderLinks(); } };
+  const renderPreviews = () => {
+    const wrap = $('#av-previews');
+    wrap.innerHTML =
+      photos.map((url, i) => `<div class="pp"><img src="${esc(url)}" alt=""><button type="button" class="rm" data-kept="${i}">×</button></div>`).join('') +
+      newFiles.map((f, i) => `<div class="pp"><img src="${URL.createObjectURL(f)}" alt=""><button type="button" class="rm" data-new="${i}">×</button></div>`).join('');
+    wrap.querySelectorAll('[data-kept]').forEach((b) => (b.onclick = () => { photos.splice(+b.getAttribute('data-kept'), 1); renderPreviews(); }));
+    wrap.querySelectorAll('[data-new]').forEach((b) => (b.onclick = () => { newFiles.splice(+b.getAttribute('data-new'), 1); renderPreviews(); }));
+    const rf = $('#rotate-field'); if (rf) rf.style.display = total() > 1 ? 'block' : 'none';
+  };
+  renderPreviews();
+  $('#av-input').onchange = (e) => { for (const f of e.target.files) { if (total() < 5) newFiles.push(f); } e.target.value = ''; renderPreviews(); };
   $('#colors').querySelectorAll('.swatch').forEach((b) => (b.onclick = () => {
     favColor = b.getAttribute('data-color');
     $('#colors').querySelectorAll('.swatch').forEach((x) => (x.style.border = '2px solid var(--line)'));
-    b.style.border = '3px solid var(--ink)'; $('#av-ring').style.background = favColor;
+    b.style.border = '3px solid var(--ink)';
   }));
   $('#pf-form').onsubmit = async (e) => {
     e.preventDefault();
@@ -757,11 +1073,17 @@ async function viewProfileEdit() {
         birthYear: f.get('birthYear') ? +f.get('birthYear') : null,
         birthMonth: f.get('birthMonth') ? +f.get('birthMonth') : null,
         birthDay: f.get('birthDay') ? +f.get('birthDay') : null,
-        hometown: f.get('hometown'), favoriteColor: favColor,
+        hometown: f.get('hometown'),
+        favoriteColor: favColor,
+        favoriteNumber: f.get('favoriteNumber') === '' ? null : +f.get('favoriteNumber'),
+        avatarPhotos: [...photos, ...newFiles],
+        avatarRotate: ($('#rotate') && $('#rotate').value) || 'day',
+        links: links.filter((l) => (l.url || '').trim()).map((l) => ({ label: (l.label || '').trim(), url: l.url.trim() })).slice(0, 5),
       };
-      if (avatarFile) patch.avatarFile = avatarFile;
+      if (!business) patch.wheelColors = { sign: $('#wc-sign').value, stone: $('#wc-stone').value, number: $('#wc-number').value };
       const applied = await api.updateProfile(u.id, patch);
-      Object.assign(state.user, patch); if (applied.avatarUri) state.user.avatarUri = applied.avatarUri;
+      Object.assign(state.user, patch);
+      if (applied.avatarPhotos) { state.user.avatarPhotos = applied.avatarPhotos; state.user.avatarUri = applied.avatarUri; }
       nav('#/profile');
     } catch (err) { $('#pf-err').innerHTML = `<div class="error">${esc(err.message)}</div>`; btn.disabled = false; btn.textContent = 'Save profile'; }
   };
@@ -803,6 +1125,7 @@ async function viewMyProfile() {
       ${u.isModerator ? '<p class="muted" style="text-align:center;margin-top:18px;font-size:0.88rem;">Moderation tools are coming to the web soon.</p>' : ''}
       ${appFooter()}
     </div>`;
+  startAvatarRotation(state.user);
 }
 
 // ---- My QR Code ------------------------------------------------------------
@@ -1418,6 +1741,8 @@ async function route() {
   const hash = location.hash || '#/journey';
   const parts = hash.replace(/^#\//, '').split('/');
   const head = (parts[0] || 'journey').split('?')[0];
+  clearInterval(state.avatarTimer);
+  clearInterval(state.spotTimer);
   const publicRoutes = ['login', 'forgot', 'reset'];
 
   if (!state.user) {
