@@ -414,6 +414,12 @@ export const updateProfile = async (userId, patch) => {
     journeyBg: 'journey_bg',
     journeyPhotoShape: 'journey_photo_shape',
     tagPermission: 'tag_permission',
+    phone: 'phone',
+    addressLine1: 'address_line1',
+    city: 'city',
+    state: 'state',
+    zipCode: 'zip_code',
+    keeperId: 'keeper_id',
   };
   for (const [k, col] of Object.entries(map)) if (k in next) dbPatch[col] = next[k];
   if (Object.keys(dbPatch).length) {
@@ -786,6 +792,11 @@ export const sendPasswordReset = async (email, redirectTo) => {
   if (error) throw new Error(error.message);
 };
 
+export const changeEmail = async (newEmail) => {
+  const { error } = await supabase.auth.updateUser({ email: newEmail.trim().toLowerCase() });
+  if (error) throw new Error(error.message);
+};
+
 export const updatePassword = async (newPassword) => {
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) throw new Error(error.message);
@@ -795,6 +806,156 @@ export const deleteAccount = async () => {
   const { error } = await supabase.functions.invoke('delete-account');
   if (error) throw new Error('Could not delete your account. Please try again.');
   await supabase.auth.signOut();
+};
+
+// ---- Photo import staging (pending_imports) --------------------------------
+// A shelf of uploaded photos that sit in the app so you can build moments in
+// bulk without re-uploading each time. Mirrors the app's pending-imports flow.
+const pendingFromRow = async (r) => ({
+  id: r.id,
+  storagePath: r.storage_path,
+  url: await signedUrlFor('photos', r.storage_path),
+  takenAt: r.taken_at,
+});
+
+export const getPendingImports = async (userId) => {
+  const { data, error } = await supabase
+    .from('pending_imports')
+    .select('*')
+    .eq('user_id', userId)
+    .order('taken_at', { ascending: false, nullsFirst: false });
+  if (error) return [];
+  return Promise.all((data || []).map(pendingFromRow));
+};
+
+// files: [{ file, takenAt }] — takenAt is epoch ms (from EXIF or lastModified).
+export const addPendingImports = async (userId, files, onProgress) => {
+  let saved = 0, done = 0;
+  const failed = [];
+  for (const { file, takenAt } of files) {
+    let path = null;
+    try {
+      const isVideo = isVideoFile(file);
+      const body = isVideo ? file : await compressImage(file);
+      const ext = isVideo ? (file.name?.split('.').pop() || 'mp4') : 'jpg';
+      path = `${userId}/pending/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from('photos')
+        .upload(path, body, { contentType: isVideo ? file.type : 'image/jpeg', upsert: false });
+      if (upErr) throw upErr;
+      const { error } = await supabase.from('pending_imports').insert({
+        user_id: userId,
+        storage_path: path,
+        taken_at: takenAt ? new Date(takenAt).toISOString() : null,
+      });
+      if (error) throw error;
+      saved++;
+    } catch (e) {
+      if (path) { try { await supabase.storage.from('photos').remove([path]); } catch {} }
+      failed.push(e?.message || 'Upload error');
+    } finally {
+      done++;
+      try { onProgress?.(done, files.length); } catch {}
+    }
+  }
+  return { saved, failed };
+};
+
+// Discard a shelf photo entirely (removes the file + the row).
+export const deletePendingImport = async (id, storagePath) => {
+  if (storagePath) await supabase.storage.from('photos').remove([storagePath]);
+  await supabase.from('pending_imports').delete().eq('id', id);
+};
+
+// Empty the shelf (rows + files).
+export const clearPendingImports = async (userId) => {
+  const { data } = await supabase.from('pending_imports').select('id, storage_path').eq('user_id', userId);
+  const paths = (data || []).map((r) => r.storage_path).filter(Boolean);
+  if (paths.length) { try { await supabase.storage.from('photos').remove(paths); } catch {} }
+  await supabase.from('pending_imports').delete().eq('user_id', userId);
+};
+
+// Take shelf items OUT of the shelf because a moment now owns the files.
+// Deletes ONLY the rows — the files stay, because the moment points at them.
+export const consumePendingImports = async (ids) => {
+  if (!ids?.length) return;
+  await supabase.from('pending_imports').delete().in('id', ids);
+};
+
+// ---- Send / receive photos (photo_shares) ---------------------------------
+export const sendPhotos = async (self, toUserId, files, note = '') => {
+  if (!toUserId || !files?.length) return 0;
+  const urls = (await uploadPhotos(self.id, files)).filter((u) => /^https?:\/\//i.test(u));
+  if (!urls.length) return 0;
+  const rows = urls.map((photo_url) => ({ from_user_id: self.id, to_user_id: toUserId, kind: 'send', photo_url, note: note.trim() }));
+  const { error } = await supabase.from('photo_shares').insert(rows);
+  if (error) throw new Error('Could not send the photos.');
+  await pushNotification(self, toUserId, { type: 'photo_send', body: note.trim() || `sent you ${rows.length} photo${rows.length === 1 ? '' : 's'}` });
+  return rows.length;
+};
+
+export const requestPhotos = async (self, toUserId, note = '') => {
+  const { error } = await supabase.from('photo_shares').insert({ from_user_id: self.id, to_user_id: toUserId, kind: 'request', note: note.trim() });
+  if (error) throw new Error('Could not send the request.');
+  await pushNotification(self, toUserId, { type: 'photo_request', body: note.trim() });
+};
+
+export const getPhotoInbox = async (userId) => {
+  const { data, error } = await supabase
+    .from('photo_shares')
+    .select('*, photo_share_replies(*, profiles(name, handle))')
+    .or(`from_user_id.eq.${userId},to_user_id.eq.${userId}`)
+    .order('created_at', { ascending: false });
+  if (error) return [];
+  return Promise.all((data || []).map(async (row) => ({
+    id: row.id, kind: row.kind, note: row.note, status: row.status, createdAt: row.created_at,
+    fromUserId: row.from_user_id, toUserId: row.to_user_id,
+    direction: row.to_user_id === userId ? 'incoming' : 'outgoing',
+    photoUrl: await signStoredUrl('photos', row.photo_url),
+    replies: (row.photo_share_replies || [])
+      .map((r) => ({ id: r.id, senderId: r.sender_id, text: r.text, createdAt: r.created_at, name: r.profiles?.name || 'Someone', handle: r.profiles?.handle || '' }))
+      .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || '')),
+  })));
+};
+
+export const markShareSaved = async (id) => { await supabase.from('photo_shares').update({ status: 'saved' }).eq('id', id); };
+
+export const addShareReply = async (self, share, text) => {
+  if (!text.trim()) return;
+  const { error } = await supabase.from('photo_share_replies').insert({ share_id: share.id, sender_id: self.id, text: text.trim() });
+  if (error) throw new Error('Could not send your reply.');
+  const otherId = share.fromUserId === self.id ? share.toUserId : share.fromUserId;
+  await pushNotification(self, otherId, { type: 'photo_reply', body: text.trim().slice(0, 140) });
+};
+
+// ---- Orders (merch) --------------------------------------------------------
+// No payment processor yet — orders land as 'awaiting_payment' (the DB default)
+// with a clean shape for Stripe checkout to slot in later.
+export const placeOrder = async (self, o) => {
+  const { data, error } = await supabase.from('orders').insert({
+    user_id: self.id,
+    product_key: o.productKey,
+    product_name: o.productName,
+    unit_price_cents: o.unitPriceCents,
+    scope: o.scope,
+    placement: o.placement || null,
+    moment_ids: o.momentIds || [],
+    moment_count: o.momentCount || 0,
+    photo_count: o.photoCount || 0,
+    shipping_name: (o.shippingName || '').trim(),
+    shipping_address_line1: (o.shippingAddressLine1 || '').trim(),
+    shipping_city: (o.shippingCity || '').trim(),
+    shipping_state: (o.shippingState || '').trim(),
+    shipping_zip: (o.shippingZip || '').trim(),
+    shipping_phone: (o.shippingPhone || '').trim(),
+  }).select().single();
+  if (error) throw new Error('Could not place your order.');
+  return data;
+};
+
+export const getMyOrders = async (userId) => {
+  const { data } = await supabase.from('orders').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+  return data || [];
 };
 
 export { byChrono };

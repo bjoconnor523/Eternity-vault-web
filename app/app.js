@@ -16,6 +16,41 @@ const US_STATES = ['Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Co
 const FAVORITE_COLORS = ['#1B4B8F', '#FFC93C', '#2E9E5B', '#C21F45', '#6B3F7A', '#E39A28', '#3AB0C4', '#9A4A24', '#707A2E', '#8C4560', '#42506B', '#1A2233'];
 const MILESTONE_OPTS = [['', '— none —'], ['marriage', '💍 Marriage'], ['graduation', '🎓 Graduation'], ['first-child', '👶 First child'], ['loss', '🕊️ Lost a loved one'], ['first-home', '🏡 First home'], ['new-job', '💼 New job'], ['big-move', '📦 Big move'], ['retirement', '🌅 Retirement']];
 
+// Journey views — same definition as the app (components/journey.js) so "solo"
+// never drifts. Solo = your own, nobody else involved (no tags, not adopted).
+const JOURNEY_VIEWS = [{ key: 'all', label: 'All Moments' }, { key: 'solo', label: 'Solo Moments' }, { key: 'companions', label: 'With Companions' }];
+const filterByView = (list, view) =>
+  view === 'solo' ? list.filter((m) => !m.adopted && !m.tags?.length)
+    : view === 'companions' ? list.filter((m) => m.adopted || m.tags?.length)
+    : list;
+
+// Journey background themes (flat colors ported from the app's journeyTheme.js;
+// the app's generative patterns are a later addition on web).
+const BG_THEMES = [
+  { key: 'default', label: 'Default', color: '#F7F9FC' }, { key: 'dawn', label: 'Dawn', color: '#FFF3D6' },
+  { key: 'night', label: 'Night Sky', color: '#141B30' }, { key: 'linen', label: 'Linen', color: '#FBF6EC' },
+  { key: 'hills', label: 'Hills', color: '#EAF1FB' }, { key: 'tide', label: 'Tide', color: '#E7F1F6' },
+  { key: 'sprig', label: 'Sprig', color: '#EFF3E9' }, { key: 'sunset', label: 'Sunset', color: '#FFD9A0' },
+  { key: 'meadow', label: 'Meadow', color: '#E4F2DC' }, { key: 'ocean', label: 'Ocean', color: '#0E3B57' },
+  { key: 'confetti', label: 'Confetti', color: '#FDFBF4' }, { key: 'citrus', label: 'Citrus', color: '#FFE9B8' },
+  { key: 'aurora', label: 'Aurora', color: '#101B33' }, { key: 'terracotta', label: 'Terracotta', color: '#F3D9C3' },
+  { key: 'wildflowers', label: 'Wildflowers', color: '#F9F5EA' }, { key: 'arcs', label: 'Sun Arcs', color: '#FDF8EF' },
+  { key: 'fireflies', label: 'Fireflies', color: '#14251E' },
+];
+const bgColor = (key) => (BG_THEMES.find((b) => b.key === key) || BG_THEMES[0]).color;
+const PHOTO_SHAPES = [{ key: 'rounded', label: 'Rounded', r: '9px' }, { key: 'square', label: 'Square', r: '2px' }, { key: 'circle', label: 'Circle', r: '50%' }];
+
+// Merch catalog — mirrors the app's lib/merch.js. Prices in one place.
+const PRODUCTS = [
+  { key: 'book', emoji: '📖', name: 'Journey Book', tagline: 'Your whole timeline as a hardcover keepsake.', detail: 'Every year, photo, and story printed and bound — one moment per page.', priceLabel: '$2.49 / page', pricing: { type: 'perPage', perPage: 2.49 }, scopes: ['all', 'decade', 'custom'] },
+  { key: 'shirt', emoji: '👕', name: 'Moment Shirt', tagline: 'Wear a favorite moment.', detail: 'A soft tee featuring one moment from your Journey — front or back.', priceLabel: '$29.99', pricing: { type: 'flat', flat: 29.99 }, scopes: ['custom'], momentTiers: [1], placement: true },
+  { key: 'blanket', emoji: '🧣', name: 'Memory Blanket', tagline: 'A woven blanket of your memories.', detail: 'A cozy throw — one giant moment, a 4-moment grid, or a 12-moment collage.', priceLabel: '$99.99', pricing: { type: 'flat', flat: 99.99 }, scopes: ['custom'], momentTiers: [1, 4, 12] },
+  { key: 'framed', emoji: '🖼️', name: 'Framed Long Photo', tagline: 'A panoramic of your journey, framed.', detail: 'A wide, framed print — up to 6 moments laid end to end.', priceLabel: '$99', pricing: { type: 'flat', flat: 99 }, scopes: ['custom'], maxMoments: 6 },
+];
+const getProduct = (k) => PRODUCTS.find((p) => p.key === k);
+const priceFor = (product, momentCount) => (!product ? 0 : product.pricing.type === 'perPage' ? Math.round(momentCount * product.pricing.perPage * 100) / 100 : product.pricing.flat);
+const money = (n) => `$${n.toFixed(2)}`;
+
 const state = { user: null, blocked: new Set() };
 const el = (id) => document.getElementById(id);
 const root = () => el('app-root');
@@ -242,9 +277,13 @@ function monumentHTML(u, moments, circleCount, isSelf) {
 
 // ---- Timeline --------------------------------------------------------------
 function momentCardHTML(m) {
+  // Solo (your own, nobody else) rides the RIGHT of the spine; companion
+  // moments (tagged people, or adopted from someone else) ride the LEFT.
+  const companion = m.adopted || (m.tags && m.tags.length);
+  const side = companion ? 'side-left' : 'side-right';
   const sealedFuture = m.sealedUntil && new Date(m.sealedUntil) > new Date();
   if (sealedFuture) {
-    return `<div class="moment-row"><div class="datetab">${esc(dateTabLabel(m))}</div>
+    return `<div class="moment-row ${side}"><div class="tabline"><div class="datetab">${esc(dateTabLabel(m))}</div></div>
       <div class="sealed-card"><div class="lock">🔒</div><div style="font-weight:600;margin-top:6px;">A sealed time capsule</div>
       <div class="muted" style="margin-top:4px;">Opens ${esc(new Date(m.sealedUntil).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }))}</div></div></div>`;
   }
@@ -253,7 +292,7 @@ function momentCardHTML(m) {
   const tagsHTML = (m.tags || []).length ? `<div class="tags">${m.tags.map((t) => `<span class="tag ${t.confirmed ? 'witnessed' : ''}">${t.confirmed ? '✓ ' : ''}${esc(t.label)}</span>`).join('')}</div>` : '';
   const loc = placeLabel(m);
   const milestone = m.milestone && MILESTONE_ICON[m.milestone] ? `<span class="milestone" title="${esc(m.milestone)}">${MILESTONE_ICON[m.milestone]}</span>` : '';
-  return `<div class="moment-row"><div class="datetab">${esc(dateTabLabel(m))}</div>
+  return `<div class="moment-row ${side}"><div class="tabline"><div class="datetab">${esc(dateTabLabel(m))}</div></div>
     <div class="card ${m.adopted ? 'adopted' : ''}" data-moment="${esc(m.id)}">
       ${milestone || m.adopted ? `<div class="m-meta">${milestone}${m.adopted ? '<span class="tag" style="background:rgba(27,75,143,0.12);color:var(--blue-deep)">Added from a friend</span>' : ''}</div>` : ''}
       ${m.title ? `<h3 class="m-title">${esc(m.title)}</h3>` : ''}
@@ -290,6 +329,27 @@ function attachMomentClicks() {
   root().querySelectorAll('[data-moment]').forEach((c) => (c.onclick = () => nav(`#/moment/${c.getAttribute('data-moment')}`)));
 }
 
+const viewChipsHTML = (id) =>
+  `<div class="viewrow" id="${id}">${JOURNEY_VIEWS.map((v) => `<button class="viewchip ${v.key === 'all' ? 'active' : ''}" data-view="${v.key}">${v.label}</button>`).join('')}</div>`;
+
+// Mount a timeline that re-renders when the All / Solo / With-Companions filter
+// changes. Photo shape follows the journey owner's chosen shape.
+function mountFilteredTimeline(hostId, chipsId, moments, owner) {
+  let view = 'all';
+  const shape = (PHOTO_SHAPES.find((s) => s.key === owner?.journeyPhotoShape) || PHOTO_SHAPES[0]).r;
+  const render = () => {
+    const filtered = filterByView(moments, view);
+    const host = el(hostId);
+    host.style.setProperty('--photo-radius', shape);
+    host.innerHTML = filtered.length ? timelineHTML(filtered, owner)
+      : `<div class="empty">${view === 'solo' ? 'No solo moments yet — nothing without a companion tagged.' : view === 'companions' ? 'No moments with companions yet — nothing here has a tag.' : 'No moments yet.'}</div>`;
+    attachMomentClicks();
+    document.querySelectorAll(`#${chipsId} .viewchip`).forEach((c) => c.classList.toggle('active', c.dataset.view === view));
+  };
+  document.querySelectorAll(`#${chipsId} .viewchip`).forEach((c) => (c.onclick = () => { view = c.dataset.view; render(); }));
+  render();
+}
+
 // ---- My Journey ------------------------------------------------------------
 async function viewJourney() {
   const unread = await api.unreadCount(state.user.id).catch(() => 0);
@@ -297,18 +357,19 @@ async function viewJourney() {
   setLoading();
   const [moments, circleCount] = await Promise.all([api.getMomentsOf(state.user.id), api.fetchCircleCountOf(state.user.id)]);
   const sealed = state.user.memorialState === 'sealed';
+  const bg = bgColor(state.user.journeyBg);
   root().innerHTML = `
     <div class="wrap">
       ${monumentHTML(state.user, moments, circleCount, true)}
       ${!sealed ? `<div class="btn-row"><a class="btn" href="#/add">+ Add a moment</a><a class="btn ghost" href="#/profile/edit">Edit profile</a></div>` : ''}
       <div class="section-title">Your Journey</div>
-      ${moments.length ? timelineHTML(moments, state.user)
+      ${moments.length ? `${viewChipsHTML('jv-chips')}<div id="jv-host" style="background:${bg};border-radius:16px;padding:14px 10px;"></div>`
         : `<div class="empty"><div class="big">🌱</div>Your journey is empty.<br>Add the first moment of your life's record.
            <div style="margin-top:18px;"><a class="btn" href="#/add">+ Add a moment</a></div></div>`}
       ${appFooter()}
     </div>
     ${!sealed ? '<button class="fab" onclick="location.hash=\'#/add\'" title="Add a moment">+</button>' : ''}`;
-  attachMomentClicks();
+  if (moments.length) mountFilteredTimeline('jv-host', 'jv-chips', moments, state.user);
 }
 
 // ---- Person (someone else's journey) ---------------------------------------
@@ -334,19 +395,21 @@ async function viewPerson(handle) {
       ${monumentHTML(u, moments, circleCount, false)}
       <div class="btn-row">
         <button class="btn ${inCircle ? 'ghost' : ''}" id="circle-btn">${inCircle ? 'In your Circle ✓' : '+ Add to Circle'}</button>
+        <button class="btn ghost sm" id="share-btn">📷 Send / Request</button>
         <button class="btn ghost sm" id="report-btn">⚑ Report</button>
         <button class="btn danger sm" id="block-btn">Block</button>
       </div>
       <div class="section-title">${esc(u.name?.split(' ')[0] || 'Their')}'s Journey</div>
-      ${moments.length ? timelineHTML(moments, u) : '<div class="empty">No moments yet.</div>'}
+      ${moments.length ? `${viewChipsHTML('pv-chips')}<div id="pv-host" style="background:${bgColor(u.journeyBg)};border-radius:16px;padding:14px 10px;"></div>` : '<div class="empty">No moments yet.</div>'}
       ${appFooter()}
     </div>`;
-  attachMomentClicks();
+  if (moments.length) mountFilteredTimeline('pv-host', 'pv-chips', moments, u);
   $('#circle-btn').onclick = async () => {
     const btn = $('#circle-btn'); btn.disabled = true;
     try { inCircle ? await api.removeFromCircle(state.user.id, u.id) : await api.addToCircle(state.user, u.id); viewPerson(handle); }
     catch (e) { btn.disabled = false; alert(e.message); }
   };
+  $('#share-btn').onclick = () => openShareModal(u, 'send');
   $('#report-btn').onclick = () => openReport({ reportedUserId: u.id, label: `@${u.handle}` });
   $('#block-btn').onclick = async () => {
     if (!confirm(`Block @${u.handle}? You won't see each other, and they can't contact you.`)) return;
@@ -513,6 +576,7 @@ async function viewMomentForm(existingId) {
   }
   const pendingFiles = [];
   let keptPhotos = m ? [...(m.photos || [])] : [];
+  const usedStagedIds = new Set();
   const thisYear = new Date().getFullYear();
   const curState = m?.placeRegion || '';
   const curCity = m?.placeCity || '';
@@ -544,6 +608,8 @@ async function viewMomentForm(existingId) {
         <div class="field"><label>People who were there</label><input name="tags" value="${m ? esc((m.tags || []).map((t) => (t.handle ? '@' + t.handle : t.label)).join(', ')) : ''}" placeholder="Mom, @davidk, the whole crew">
           <div class="hint">Separate with commas. Use @handle to link a real member.</div></div>
         <div class="field"><label>Photos</label><input type="file" id="photo-input" accept="image/*,video/*" multiple><div class="photo-preview" id="preview"></div></div>
+        <div class="field"><label>Or pull from your shelf</label><div id="shelf-strip" class="shelf-strip"><span class="muted" style="font-size:0.9rem;">Loading…</span></div>
+          <div class="hint"><a href="#/import">Manage your import shelf →</a></div></div>
         <button class="btn block" type="submit">${existingId ? 'Save changes' : 'Add to my Journey'}</button>
       </form>
     </div>`;
@@ -557,6 +623,22 @@ async function viewMomentForm(existingId) {
   };
   $('#photo-input').onchange = (e) => { for (const f of e.target.files) pendingFiles.push(f); renderPreview(); };
   renderPreview();
+  // Load the import shelf so photos can be pulled straight in.
+  (async () => {
+    const shelf = await loadStaged();
+    const strip = $('#shelf-strip');
+    if (!strip) return;
+    if (!shelf.length) { strip.innerHTML = '<span class="muted" style="font-size:0.9rem;">Nothing on your shelf. <a href="#/import">Upload photos →</a></span>'; return; }
+    strip.innerHTML = shelf.map((s) => `<div class="st" data-id="${esc(s.id)}" data-url="${esc(s.url)}"><img src="${esc(s.url)}" alt=""></div>`).join('');
+    strip.querySelectorAll('.st').forEach((elm) => (elm.onclick = () => {
+      const id = elm.getAttribute('data-id');
+      if (usedStagedIds.has(id)) return;
+      usedStagedIds.add(id);
+      keptPhotos.push(elm.getAttribute('data-url'));
+      elm.classList.add('used');
+      renderPreview();
+    }));
+  })();
   $('#m-form').onsubmit = async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
@@ -575,8 +657,15 @@ async function viewMomentForm(existingId) {
         location: locationText, place, milestone: f.get('milestone') || null,
         photos: [...keptPhotos, ...pendingFiles], tags,
       };
-      if (existingId) { await api.updateMemory(state.user, existingId, payload, m.tags); nav(`#/moment/${existingId}`); }
-      else { const row = await api.addMemory(state.user, payload); nav(`#/moment/${row.id}`); }
+      if (existingId) {
+        await api.updateMemory(state.user, existingId, payload, m.tags);
+        if (usedStagedIds.size) await api.consumePendingImports([...usedStagedIds]);
+        nav(`#/moment/${existingId}`);
+      } else {
+        const row = await api.addMemory(state.user, payload);
+        if (usedStagedIds.size) await api.consumePendingImports([...usedStagedIds]);
+        nav(`#/moment/${row.id}`);
+      }
     } catch (err) {
       $('#form-err').innerHTML = `<div class="error">${esc(err.message)}</div>`;
       btn.disabled = false; btn.textContent = existingId ? 'Save changes' : 'Add to my Journey';
@@ -647,84 +736,213 @@ async function viewMyProfile() {
   renderTopbar('profile', unread);
   setLoading();
   const [moments, circleCount] = await Promise.all([api.getMomentsOf(state.user.id), api.fetchCircleCountOf(state.user.id)]);
+  const u = state.user;
+  const photoCount = moments.filter((m) => m.photos?.length).length;
+  const years = moments.map((m) => m.year);
+  const span = years.length ? `${Math.min(...years)} – ${Math.max(...years)}` : '—';
+  const menuRow = (href, ic, label) => `<a class="menu-row" href="${href}"><span class="mic">${ic}</span><span class="ml">${label}</span><span class="chev">›</span></a>`;
   root().innerHTML = `
     <div class="wrap">
-      ${monumentHTML(state.user, moments, circleCount, true)}
-      <div class="btn-row">
-        <a class="btn" href="#/journey">View my Journey</a>
-        <a class="btn ghost" href="#/profile/edit">Edit profile</a>
-        <a class="btn ghost" href="#/settings">Settings</a>
+      ${monumentHTML(u, moments, circleCount, true)}
+      <div class="stats-card">
+        <div class="row3">
+          <div class="st"><div class="n">${moments.length}</div><div class="l">Moments</div></div>
+          <div class="st"><div class="n">${photoCount}</div><div class="l">Photos</div></div>
+          <div class="st"><div class="n">${circleCount}</div><div class="l">Circle</div></div>
+        </div>
+        <div class="span"><span class="l">Journey spans</span><span class="v">${span}</span></div>
       </div>
+      <div class="menu-card">
+        ${menuRow('#/journey', '📖', 'View my Journey')}
+        ${menuRow('#/import', '📥', 'Import Photos')}
+        ${menuRow('#/profile/edit', '✎', 'Edit Profile')}
+        ${menuRow('#/profile/qr', '▦', 'My QR Code')}
+        ${menuRow('#/profile/customize', '🎨', 'Customize Journey')}
+        ${menuRow('#/shared', '📬', 'Shared With Me')}
+        ${menuRow('#/merch', '🛍️', 'Order Memories')}
+        ${menuRow('#/orders', '📦', 'My Orders')}
+        ${menuRow('#/settings', '⚙️', 'Account & Settings')}
+      </div>
+      ${u.isModerator ? '<p class="muted" style="text-align:center;margin-top:18px;font-size:0.88rem;">Moderation tools are coming to the web soon.</p>' : ''}
       ${appFooter()}
     </div>`;
+}
+
+// ---- My QR Code ------------------------------------------------------------
+async function viewQR() {
+  renderTopbar('profile');
+  const u = state.user;
+  const url = `${location.origin}/app/#/u/${u.handle}`;
+  root().innerHTML = `
+    <div class="wrap narrow">
+      <a class="back" href="#/profile">← Back</a>
+      <div class="section-title">My QR Code</div>
+      <p class="muted">Point a phone camera at this to open your journey.</p>
+      <div class="panel qr-box">
+        <canvas id="qr" width="240" height="240"></canvas>
+        <div class="qr-url">${esc(url)}</div>
+        <div class="btn-row"><button class="btn ghost sm" id="copy">Copy link</button></div>
+      </div>
+    </div>`;
+  $('#copy').onclick = () => { try { navigator.clipboard.writeText(url); $('#copy').textContent = 'Copied!'; } catch {} };
+  try {
+    const QR = await import('https://esm.sh/qrcode@1.5.4');
+    await (QR.toCanvas || QR.default.toCanvas)($('#qr'), url, { width: 240, margin: 1, color: { dark: '#1B4B8F', light: '#ffffff' } });
+  } catch {
+    $('#qr').outerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(url)}" alt="QR code">`;
+  }
+}
+
+// ---- Customize Journey -----------------------------------------------------
+async function viewCustomize() {
+  renderTopbar('profile');
+  const u = state.user;
+  root().innerHTML = `
+    <div class="wrap">
+      <a class="back" href="#/profile">← Back</a>
+      <div class="section-title">Customize Journey</div>
+      <div id="cust-msg"></div>
+      <div class="section-title" style="font-size:1.15rem;">Background</div>
+      <div class="theme-grid" id="bg-grid">${BG_THEMES.map((b) => `<div class="theme-sw ${u.journeyBg === b.key ? 'sel' : ''}" data-bg="${b.key}"><div class="dot" style="background:${b.color}"></div><div class="tn">${b.label}</div></div>`).join('')}</div>
+      <div class="section-title" style="font-size:1.15rem;">Photo shape</div>
+      <div class="theme-grid" id="shape-grid">${PHOTO_SHAPES.map((s) => `<div class="theme-sw ${u.journeyPhotoShape === s.key ? 'sel' : ''}" data-shape="${s.key}"><div class="dot" style="background:var(--blue);border-radius:${s.r}"></div><div class="tn">${s.label}</div></div>`).join('')}</div>
+      <p class="muted" style="margin-top:18px;font-size:0.88rem;">More journey styling (fonts, patterned backdrops) is coming to the web soon.</p>
+    </div>`;
+  const wire = (gridId, attr, field) =>
+    root().querySelectorAll(`#${gridId} .theme-sw`).forEach((sw) => (sw.onclick = async () => {
+      const val = sw.getAttribute(attr);
+      root().querySelectorAll(`#${gridId} .theme-sw`).forEach((x) => x.classList.remove('sel'));
+      sw.classList.add('sel');
+      try { await api.updateProfile(u.id, { [field]: val }); state.user[field] = val; $('#cust-msg').innerHTML = '<div class="success">Saved.</div>'; }
+      catch (err) { $('#cust-msg').innerHTML = `<div class="error">${esc(err.message)}</div>`; }
+    }));
+  wire('bg-grid', 'data-bg', 'journeyBg');
+  wire('shape-grid', 'data-shape', 'journeyPhotoShape');
 }
 
 // ---- Settings --------------------------------------------------------------
 async function viewSettings() {
   renderTopbar('settings');
+  setLoading();
   const u = state.user;
+  // Circle members for the Keeper picker.
+  const pairs = await api.fetchCircleOf(u.id);
+  const ids = [...new Set(pairs.map((p) => (p.a === u.id ? p.b : p.a)))];
+  const members = [];
+  for (const id of ids) { const m = await api.fetchUserById(id); if (m) members.push(m); }
+  const section = (t) => `<div class="section-title" style="font-size:1.15rem;">${t}</div>`;
   root().innerHTML = `
     <div class="wrap">
       <a class="back" href="#/profile">← Back</a>
-      <div class="section-title">Settings</div>
+      <div class="section-title">Account &amp; Settings</div>
       <div id="set-msg"></div>
 
-      <div class="section-title" style="font-size:1.15rem;">Privacy</div>
-      <div class="panel">
-        <div class="field"><label>Who can tag you in moments?</label>
-          <select id="tagperm">
-            <option value="anyone" ${u.tagPermission === 'anyone' ? 'selected' : ''}>Anyone</option>
-            <option value="circle" ${u.tagPermission === 'circle' ? 'selected' : ''}>Only my Circle</option>
-            <option value="nobody" ${u.tagPermission === 'nobody' ? 'selected' : ''}>No one</option>
-          </select></div>
-      </div>
+      ${section('Email address')}
+      <form class="panel" id="email-form">
+        <div class="field"><label>Email</label><input name="email" type="email" value="${esc(u.email || '')}" autocomplete="email"></div>
+        <button class="btn ghost sm" type="submit">Update email</button>
+        <div class="hint">You'll get a confirmation link at the new address.</div>
+      </form>
 
-      <div class="section-title" style="font-size:1.15rem;">Your Vault</div>
-      <div class="panel">
-        <p class="muted" style="margin-top:0;">Your life is yours. Download a complete copy any time — no hostage-taking.</p>
-        <div class="btn-row" style="justify-content:flex-start;">
-          <button class="btn ghost sm" id="dl-html">Download as a readable page</button>
-          <button class="btn ghost sm" id="dl-json">Download as a data file</button>
-        </div>
-      </div>
-
-      <div class="section-title" style="font-size:1.15rem;">Password</div>
+      ${section('Password')}
       <form class="panel" id="pw-form">
-        <div class="field"><label>New password</label>
-          <div class="pw-wrap"><input name="password" type="password" minlength="6" autocomplete="new-password" required>
-            <button type="button" class="pw-toggle">Show</button></div></div>
+        <div class="field"><label>New password</label><div class="pw-wrap"><input name="pw" type="password" minlength="6" autocomplete="new-password"><button type="button" class="pw-toggle">Show</button></div></div>
+        <div class="field"><label>Confirm new password</label><div class="pw-wrap"><input name="pw2" type="password" minlength="6" autocomplete="new-password"><button type="button" class="pw-toggle">Show</button></div></div>
         <button class="btn sm" type="submit">Update password</button>
       </form>
 
-      <div class="section-title" style="font-size:1.15rem;">Account</div>
-      <div class="settings-list">
-        <div class="settings-row"><div class="lbl"><div class="t">Signed in as</div><div class="d">${esc(u.email || u.handle)}</div></div></div>
-        <div class="settings-row"><div class="lbl"><div class="t">Log out</div><div class="d">Sign out on this device</div></div><button class="btn ghost sm" id="logout">Log out</button></div>
-        <div class="settings-row"><div class="lbl"><div class="t" style="color:var(--danger)">Delete account</div><div class="d">Permanently erase your account and everything in it. Cannot be undone.</div></div><button class="btn danger sm" id="del-account">Delete</button></div>
+      ${section('Shipping details')}
+      <form class="panel" id="ship-form">
+        <p class="muted" style="margin-top:0;">Where we'll send your printed books, prints, and merch.</p>
+        <div class="field"><label>Phone</label><input name="phone" value="${esc(u.phone || '')}" placeholder="(555) 123-4567"></div>
+        <div class="field"><label>Street address</label><input name="addressLine1" value="${esc(u.addressLine1 || '')}" placeholder="123 Main St"></div>
+        <div class="row">
+          <div class="field"><label>City</label><input name="city" value="${esc(u.city || '')}"></div>
+          <div class="field"><label>State</label><select name="state"><option value="">—</option>${US_STATES.map((s) => `<option ${u.state === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+          <div class="field"><label>ZIP</label><input name="zipCode" value="${esc(u.zipCode || '')}" maxlength="10"></div>
+        </div>
+        <button class="btn ghost sm" type="submit">Save shipping details</button>
+      </form>
+
+      ${section('Privacy')}
+      <div class="panel"><label style="font-weight:700;color:var(--blue-deep);display:block;margin-bottom:10px;">Who can tag you in a memory?</label>
+        <div id="tagopts">
+          ${[['anyone', 'Anyone', 'Any signed-in member can tag you.'], ['circle', 'My Circle', 'Only people in your Circle can tag you.'], ['nobody', 'Nobody', 'No one can tag you in a memory.']]
+            .map(([v, l, h]) => `<div class="opt ${((u.tagPermission || 'anyone') === v) ? 'sel' : ''}" data-perm="${v}"><div class="radio"></div><div><div class="ol">${l}</div><div class="oh">${h}</div></div></div>`).join('')}
+        </div>
       </div>
 
-      <div class="app-footer"><a href="../privacy.html" target="_blank">Privacy</a> · <a href="../terms.html" target="_blank">Terms</a> · <a href="../support.html" target="_blank">Support</a></div>
+      ${section('Your Vault')}
+      <div class="panel"><p class="muted" style="margin-top:0;">Take a copy of everything, anytime — a readable document plus a data file. It's yours; we never hold it hostage.</p>
+        <div class="btn-row" style="justify-content:flex-start;"><button class="btn ghost sm" id="dl-html">Download as a page</button><button class="btn ghost sm" id="dl-json">Download as a data file</button></div>
+      </div>
+
+      ${section('Legacy — your Keeper')}
+      <div class="panel"><p class="muted" style="margin-top:0;">Name the one person you trust to tell us when you're gone. They can never edit or add to your Vault — only close it, and share it. Choose from your Circle.</p>
+        <div class="field"><select id="keeper">
+          <option value="">No Keeper chosen</option>
+          ${members.map((m) => `<option value="${m.id}" ${u.keeperId === m.id ? 'selected' : ''}>${esc(m.name)} (@${esc(m.handle)})</option>`).join('')}
+        </select></div>
+        ${members.length === 0 ? '<div class="hint">Add people to your Circle first, then you can name one as your Keeper.</div>' : ''}
+      </div>
+
+      ${section('Legal')}
+      <div class="settings-list">
+        <a class="settings-row" href="../terms.html" target="_blank"><div class="lbl"><div class="t">Terms of Service</div></div><span class="chev">›</span></a>
+        <a class="settings-row" href="../privacy.html" target="_blank"><div class="lbl"><div class="t">Privacy Policy</div></div><span class="chev">›</span></a>
+        <a class="settings-row" href="../support.html" target="_blank"><div class="lbl"><div class="t">Support</div></div><span class="chev">›</span></a>
+      </div>
+
+      <div class="section-title" style="font-size:1.15rem;color:var(--danger)">Danger zone</div>
+      <div class="settings-list">
+        <div class="settings-row"><div class="lbl"><div class="t">Log out</div><div class="d">${esc(u.email || u.handle)}</div></div><button class="btn ghost sm" id="logout">Log out</button></div>
+        <div class="settings-row"><div class="lbl"><div class="t" style="color:var(--danger)">Delete account</div><div class="d">Permanently erase everything. Cannot be undone.</div></div><button class="btn danger sm" id="del-account">Delete</button></div>
+      </div>
+
+      <div style="text-align:center;color:var(--muted);margin-top:26px;">
+        <img src="../brand/eternity-vault-mark.svg" width="30" height="30" alt=""><div style="font-weight:600;margin-top:4px;">Eternity Vault</div><div style="font-size:0.82rem;">Web · Version 1.0</div>
+      </div>
     </div>`;
   wirePasswordToggles();
-  $('#tagperm').onchange = async (e) => {
-    try { await api.updateProfile(u.id, { tagPermission: e.target.value }); state.user.tagPermission = e.target.value; $('#set-msg').innerHTML = '<div class="success">Privacy updated.</div>'; }
-    catch (err) { $('#set-msg').innerHTML = `<div class="error">${esc(err.message)}</div>`; }
+  const msg = (html) => { $('#set-msg').innerHTML = html; window.scrollTo(0, 0); };
+  $('#email-form').onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api.changeEmail(new FormData(e.target).get('email')); msg('<div class="success">Email change started — check your new inbox for a confirmation link.</div>'); }
+    catch (err) { msg(`<div class="error">${esc(err.message)}</div>`); }
   };
-  $('#dl-html').onclick = () => downloadJourney('html');
-  $('#dl-json').onclick = () => downloadJourney('json');
   $('#pw-form').onsubmit = async (e) => {
     e.preventDefault();
-    const pw = new FormData(e.target).get('password');
-    const btn = $('#pw-form button'); btn.disabled = true; btn.textContent = 'Updating…';
-    try { await api.updatePassword(pw); $('#set-msg').innerHTML = '<div class="success">Password updated.</div>'; e.target.reset(); }
-    catch (err) { $('#set-msg').innerHTML = `<div class="error">${esc(err.message)}</div>`; }
-    btn.disabled = false; btn.textContent = 'Update password';
+    const f = new FormData(e.target);
+    if (f.get('pw').length < 6) return msg('<div class="error">Password must be at least 6 characters.</div>');
+    if (f.get('pw') !== f.get('pw2')) return msg('<div class="error">Passwords do not match.</div>');
+    try { await api.updatePassword(f.get('pw')); e.target.reset(); msg('<div class="success">Password updated.</div>'); }
+    catch (err) { msg(`<div class="error">${esc(err.message)}</div>`); }
+  };
+  $('#ship-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const patch = { phone: f.get('phone'), addressLine1: f.get('addressLine1'), city: f.get('city'), state: f.get('state'), zipCode: f.get('zipCode') };
+    try { await api.updateProfile(u.id, patch); Object.assign(state.user, patch); msg('<div class="success">Shipping details saved.</div>'); }
+    catch (err) { msg(`<div class="error">${esc(err.message)}</div>`); }
+  };
+  root().querySelectorAll('#tagopts .opt').forEach((o) => (o.onclick = async () => {
+    const v = o.getAttribute('data-perm');
+    root().querySelectorAll('#tagopts .opt').forEach((x) => x.classList.remove('sel'));
+    o.classList.add('sel');
+    try { await api.updateProfile(u.id, { tagPermission: v }); state.user.tagPermission = v; } catch (err) { msg(`<div class="error">${esc(err.message)}</div>`); }
+  }));
+  $('#dl-html').onclick = () => downloadJourney('html');
+  $('#dl-json').onclick = () => downloadJourney('json');
+  $('#keeper').onchange = async (e) => {
+    const v = e.target.value || null;
+    try { await api.updateProfile(u.id, { keeperId: v }); state.user.keeperId = v; msg('<div class="success">Keeper updated.</div>'); }
+    catch (err) { msg(`<div class="error">${esc(err.message)}</div>`); }
   };
   $('#logout').onclick = async () => { await api.logOut(); state.user = null; state.blocked = new Set(); nav('#/login'); route(); };
   $('#del-account').onclick = async () => {
     if (!confirm('Permanently delete your account and everything in it? This cannot be undone.')) return;
     if (!confirm('Are you absolutely sure? There is no way to recover your journey after this.')) return;
-    try { await api.deleteAccount(); state.user = null; nav('#/login'); route(); } catch (err) { $('#set-msg').innerHTML = `<div class="error">${esc(err.message)}</div>`; }
+    try { await api.deleteAccount(); state.user = null; nav('#/login'); route(); } catch (err) { msg(`<div class="error">${esc(err.message)}</div>`); }
   };
 }
 
@@ -774,6 +992,348 @@ async function downloadJourney(format) {
   downloadBlob(`${u.handle || 'journey'}-eternity-vault.html`, 'text/html', html);
 }
 
+// ---- Photo import shelf ----------------------------------------------------
+async function readPhotoDate(file) {
+  try {
+    const mod = await import('https://esm.sh/exifr@7.1.3');
+    const exifr = mod.default || mod;
+    const m = await exifr.parse(file, ['DateTimeOriginal', 'CreateDate']).catch(() => null);
+    const d = m?.DateTimeOriginal || m?.CreateDate;
+    if (d) return +new Date(d);
+  } catch {}
+  return file.lastModified || Date.now();
+}
+
+async function loadStaged() {
+  try { return await api.getPendingImports(state.user.id); } catch { return []; }
+}
+
+async function viewImport() {
+  renderTopbar('profile');
+  setLoading();
+  let staged = await loadStaged();
+  const selected = new Set();
+
+  const doUpload = async (files) => {
+    if (!files.length) return;
+    $('#imp-progress').innerHTML = `<div class="progress"><div class="bar" style="width:0%"></div></div><div class="muted" id="pct">Reading photo dates…</div>`;
+    const withDates = [];
+    for (const file of files) withDates.push({ file, takenAt: await readPhotoDate(file) });
+    const res = await api.addPendingImports(state.user.id, withDates, (done, total) => {
+      const bar = $('#imp-progress .bar'); if (bar) bar.style.width = Math.round((done / total) * 100) + '%';
+      const pct = $('#pct'); if (pct) pct.textContent = `Uploading ${done}/${total}…`;
+    });
+    staged = await loadStaged();
+    render();
+    $('#imp-msg').innerHTML = res.failed.length
+      ? `<div class="error">${res.saved} added, ${res.failed.length} couldn't upload.</div>`
+      : `<div class="success">${res.saved} photo${res.saved === 1 ? '' : 's'} added to your shelf.</div>`;
+  };
+
+  const buildMoment = async () => {
+    const items = staged.filter((s) => selected.has(s.id));
+    if (!items.length) return;
+    const first = items.find((s) => s.takenAt);
+    const d = first ? new Date(first.takenAt) : new Date();
+    try {
+      const row = await api.addMemory(state.user, {
+        year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate(),
+        title: '', caption: '', story: '', location: '', photos: items.map((s) => s.url), tags: [],
+      });
+      await api.consumePendingImports(items.map((s) => s.id));
+      nav(`#/edit/${row.id}`);
+    } catch (e) { $('#imp-msg').innerHTML = `<div class="error">${esc(e.message)}</div>`; }
+  };
+
+  function render() {
+    root().innerHTML = `
+      <div class="wrap">
+        <a class="back" href="#/profile">← Back</a>
+        <div class="section-title">Import Photos</div>
+        <p class="muted">Upload photos to your shelf — they sit here so you can build moments in bulk without re-uploading each time. We read each photo's date automatically. Delete them when you're done, or leave them for later.</p>
+        <div id="imp-msg"></div>
+        <div class="btn-row" style="justify-content:flex-start;">
+          <label class="btn" style="cursor:pointer;">+ Upload photos<input type="file" id="imp-input" accept="image/*,video/*" multiple hidden></label>
+          ${staged.length ? `<button class="btn ghost" id="clear-all">Clear shelf (${staged.length})</button>` : ''}
+        </div>
+        <div id="imp-progress"></div>
+        ${selected.size ? `<div class="notice" style="display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;">
+          <span>${selected.size} selected</span>
+          <span><button class="btn sm" id="build">Build a moment from these</button> <button class="btn ghost sm" id="deselect">Clear</button></span></div>` : ''}
+        ${staged.length ? `<div class="shelf-grid">${staged.map((s) => `
+          <div class="shelf-item ${selected.has(s.id) ? 'sel' : ''}" data-id="${esc(s.id)}">
+            <img src="${esc(s.url)}" loading="lazy" alt="">
+            <div class="shelf-date">${s.takenAt ? new Date(s.takenAt).toLocaleDateString() : 'No date'}</div>
+            <button class="rm" data-del="${esc(s.id)}" data-path="${esc(s.storagePath)}">×</button>
+          </div>`).join('')}</div>`
+          : '<div class="empty"><div class="big">🖼️</div>Your shelf is empty.<br>Upload photos to get started.</div>'}
+      </div>`;
+    $('#imp-input').onchange = (e) => doUpload([...e.target.files]);
+    if ($('#clear-all')) $('#clear-all').onclick = async () => {
+      if (!confirm('Delete all photos on your shelf? (Photos already saved into moments are safe.)')) return;
+      await api.clearPendingImports(state.user.id); staged = []; selected.clear(); render();
+    };
+    if ($('#deselect')) $('#deselect').onclick = () => { selected.clear(); render(); };
+    if ($('#build')) $('#build').onclick = buildMoment;
+    root().querySelectorAll('.shelf-item').forEach((it) => (it.onclick = (e) => {
+      if (e.target.hasAttribute('data-del')) return;
+      const id = it.getAttribute('data-id');
+      selected.has(id) ? selected.delete(id) : selected.add(id);
+      render();
+    }));
+    root().querySelectorAll('[data-del]').forEach((b) => (b.onclick = async (e) => {
+      e.stopPropagation();
+      const id = b.getAttribute('data-del');
+      await api.deletePendingImport(id, b.getAttribute('data-path'));
+      staged = staged.filter((s) => s.id !== id); selected.delete(id); render();
+    }));
+  }
+  render();
+}
+
+// ---- Shared With Me (photo shares) -----------------------------------------
+async function viewShared() {
+  renderTopbar('profile');
+  setLoading();
+  const inbox = await api.getPhotoInbox(state.user.id);
+  const otherIds = [...new Set(inbox.map((s) => (s.direction === 'incoming' ? s.fromUserId : s.toUserId)))];
+  const people = {};
+  for (const id of otherIds) { const u = await api.fetchUserById(id); if (u) people[id] = u; }
+  const nameOf = (s) => { const p = people[s.direction === 'incoming' ? s.fromUserId : s.toUserId]; return p ? `${p.name} (@${p.handle})` : 'Someone'; };
+
+  const card = (s) => {
+    const who = s.direction === 'incoming' ? `From ${esc(nameOf(s))}` : `To ${esc(nameOf(s))}`;
+    const isReq = s.kind === 'request';
+    return `<div class="contribution" data-share="${esc(s.id)}">
+      <div style="display:flex;justify-content:space-between;"><span style="font-weight:600;color:var(--blue)">${who}</span><span class="muted" style="font-size:0.8rem;">${timeAgo(s.createdAt)}</span></div>
+      ${isReq ? `<p style="margin:6px 0;">📷 ${s.direction === 'incoming' ? 'Asked you for photos' : 'You asked for photos'}${s.note ? `: “${esc(s.note)}”` : '.'}</p>
+        ${s.direction === 'incoming' ? `<button class="btn sm" data-send="${esc(s.direction === 'incoming' ? s.fromUserId : s.toUserId)}">Send photos</button>` : ''}`
+      : `${s.note ? `<p style="margin:6px 0;">${esc(s.note)}</p>` : ''}
+         ${s.photoUrl ? `<img src="${esc(s.photoUrl)}" style="max-width:220px;border-radius:10px;border:3px solid var(--paper);box-shadow:var(--shadow-sm);display:block;margin:8px 0;">` : ''}
+         ${s.direction === 'incoming' && s.photoUrl ? `<a class="btn ghost sm" href="${esc(s.photoUrl)}" download target="_blank" data-save="${esc(s.id)}">Save photo</a>` : ''}`}
+      <div class="replies" style="margin-top:10px;">
+        ${s.replies.map((r) => `<div style="font-size:0.9rem;margin:4px 0;"><strong>${esc(r.name)}:</strong> ${esc(r.text)}</div>`).join('')}
+        <form class="reply-form" style="display:flex;gap:6px;margin-top:6px;"><input name="text" placeholder="Reply…" style="flex:1" required><button class="btn ghost sm" type="submit">Send</button></form>
+      </div>
+    </div>`;
+  };
+  root().innerHTML = `
+    <div class="wrap">
+      <a class="back" href="#/profile">← Back</a>
+      <div class="section-title">Shared With Me</div>
+      <p class="muted">Photos people sent you, and requests — plus the ones you sent.</p>
+      ${inbox.length ? inbox.map(card).join('') : '<div class="empty"><div class="big">📬</div>Nothing shared yet.<br>Send photos from someone\'s profile.</div>'}
+    </div>`;
+  root().querySelectorAll('[data-send]').forEach((b) => (b.onclick = async () => { const u = await api.fetchUserById(b.getAttribute('data-send')); if (u) openShareModal(u, 'send'); }));
+  root().querySelectorAll('[data-save]').forEach((b) => (b.onclick = () => api.markShareSaved(b.getAttribute('data-save'))));
+  root().querySelectorAll('[data-share]').forEach((cardEl) => {
+    const form = cardEl.querySelector('.reply-form');
+    if (form) form.onsubmit = async (e) => {
+      e.preventDefault();
+      const text = new FormData(e.target).get('text');
+      const share = inbox.find((s) => s.id === cardEl.getAttribute('data-share'));
+      try { await api.addShareReply(state.user, share, text); viewShared(); } catch (err) { alert(err.message); }
+    };
+  });
+}
+
+// Send/Request photos to a specific person.
+function openShareModal(target, mode = 'send') {
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  const files = [];
+  const draw = () => {
+    back.innerHTML = `
+      <div class="modal">
+        <h2>${mode === 'send' ? 'Send photos to' : 'Ask for photos from'} @${esc(target.handle)}</h2>
+        <div id="sh-msg"></div>
+        <div class="viewrow" style="max-width:none;">
+          <button class="viewchip ${mode === 'send' ? 'active' : ''}" data-mode="send">Send photos</button>
+          <button class="viewchip ${mode === 'request' ? 'active' : ''}" data-mode="request">Request photos</button>
+        </div>
+        <form id="sh-form">
+          ${mode === 'send' ? `<div class="field"><label>Photos</label><input type="file" id="sh-files" accept="image/*,video/*" multiple>
+            <div class="photo-preview" id="sh-prev">${files.map((f, i) => `<div class="pp"><img src="${URL.createObjectURL(f)}"><button type="button" class="rm" data-i="${i}">×</button></div>`).join('')}</div></div>` : ''}
+          <div class="field"><label>${mode === 'send' ? 'Note (optional)' : 'What are you looking for?'}</label><textarea name="note" placeholder="${mode === 'send' ? 'Here are the ones from the reunion…' : 'Any photos from the 2005 trip?'}"></textarea></div>
+          <div class="btn-row" style="justify-content:flex-end;"><button type="button" class="btn ghost sm" id="sh-cancel">Cancel</button><button type="submit" class="btn sm">${mode === 'send' ? 'Send' : 'Send request'}</button></div>
+        </form>
+      </div>`;
+    back.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => { mode = b.getAttribute('data-mode'); draw(); }));
+    $('#sh-cancel', back).onclick = () => back.remove();
+    if ($('#sh-files', back)) $('#sh-files', back).onchange = (e) => { for (const f of e.target.files) files.push(f); draw(); };
+    back.querySelectorAll('[data-i]').forEach((b) => (b.onclick = () => { files.splice(+b.getAttribute('data-i'), 1); draw(); }));
+    $('#sh-form', back).onsubmit = async (e) => {
+      e.preventDefault();
+      const note = new FormData(e.target).get('note');
+      const btn = $('#sh-form button[type=submit]', back); btn.disabled = true; btn.textContent = 'Sending…';
+      try {
+        if (mode === 'send') {
+          if (!files.length) throw new Error('Add at least one photo.');
+          await api.sendPhotos(state.user, target.id, files, note);
+        } else await api.requestPhotos(state.user, target.id, note);
+        $('#sh-msg', back).innerHTML = '<div class="success">Sent.</div>';
+        setTimeout(() => back.remove(), 1000);
+      } catch (err) { $('#sh-msg', back).innerHTML = `<div class="error">${esc(err.message)}</div>`; btn.disabled = false; btn.textContent = mode === 'send' ? 'Send' : 'Send request'; }
+    };
+  };
+  back.onclick = (e) => { if (e.target === back) back.remove(); };
+  document.body.appendChild(back);
+  draw();
+}
+
+// ---- Merch catalog ---------------------------------------------------------
+async function viewMerch() {
+  renderTopbar('profile');
+  root().innerHTML = `
+    <div class="wrap">
+      <a class="back" href="#/profile">← Back</a>
+      <div class="section-title">Order Memories</div>
+      <p class="muted">Turn your journey into something you can hold. Made to order from your own moments.</p>
+      <div class="prod-grid">
+        ${PRODUCTS.map((p) => `<a class="prod-card" href="#/merch/${p.key}">
+          <div class="pemoji">${p.emoji}</div>
+          <div class="pname">${esc(p.name)}</div>
+          <div class="ptag muted">${esc(p.tagline)}</div>
+          <div class="pprice">${esc(p.priceLabel)}</div>
+        </a>`).join('')}
+      </div>
+      <p class="muted" style="text-align:center;margin-top:20px;font-size:0.85rem;">Payment isn't live yet — orders are saved and we'll follow up. (Stripe checkout coming.)</p>
+      <div style="text-align:center;margin-top:12px;"><a class="btn ghost sm" href="#/orders">My Orders</a></div>
+    </div>`;
+}
+
+// ---- Merch product configurator --------------------------------------------
+async function viewMerchProduct(key) {
+  renderTopbar('profile');
+  setLoading();
+  const product = getProduct(key);
+  if (!product) { nav('#/merch'); return; }
+  const u = state.user;
+  const moments = (await api.getMomentsOf(u.id)).sort(api.byChrono);
+  if (!moments.length) { root().innerHTML = `<div class="wrap"><a class="back" href="#/merch">← Store</a><div class="empty">Add some moments to your Journey first — then you can make a ${esc(product.name)}.</div></div>`; return; }
+
+  let scope = product.scopes.includes('all') ? 'all' : 'custom';
+  let decade = [...new Set(moments.map((m) => Math.floor(m.year / 10) * 10))].sort()[0];
+  let tier = product.momentTiers ? product.momentTiers[0] : null;
+  let placement = product.placement ? 'front' : null;
+  const selected = new Set();
+  const decades = [...new Set(moments.map((m) => Math.floor(m.year / 10) * 10))].sort();
+  const maxPick = () => (product.momentTiers ? tier : product.maxMoments ? product.maxMoments : Infinity);
+  const needsPicker = () => product.key !== 'book' || scope === 'custom';
+  const chosen = () => {
+    if (product.key === 'book' && scope === 'all') return moments;
+    if (product.key === 'book' && scope === 'decade') return moments.filter((m) => Math.floor(m.year / 10) * 10 === decade);
+    return moments.filter((m) => selected.has(m.id));
+  };
+  const price = () => priceFor(product, chosen().length);
+
+  const render = () => {
+    const picked = chosen();
+    root().innerHTML = `
+      <div class="wrap">
+        <a class="back" href="#/merch">← Store</a>
+        <div style="text-align:center;"><div style="font-size:3rem;">${product.emoji}</div>
+          <h1 style="color:var(--blue);margin:4px 0;">${esc(product.name)}</h1>
+          <p class="muted">${esc(product.detail)}</p></div>
+        <div id="merch-msg"></div>
+
+        ${product.key === 'book' ? `<div class="section-title" style="font-size:1.1rem;">What goes in it?</div>
+          <div class="viewrow" style="max-width:none;">
+            <button class="viewchip ${scope === 'all' ? 'active' : ''}" data-scope="all">Whole journey</button>
+            <button class="viewchip ${scope === 'decade' ? 'active' : ''}" data-scope="decade">By decade</button>
+            <button class="viewchip ${scope === 'custom' ? 'active' : ''}" data-scope="custom">Pick moments</button>
+          </div>
+          ${scope === 'decade' ? `<div class="field"><select id="decadeSel">${decades.map((d) => `<option value="${d}" ${d === decade ? 'selected' : ''}>${d}s (${moments.filter((m) => Math.floor(m.year / 10) * 10 === d).length} moments)</option>`).join('')}</select></div>` : ''}` : ''}
+
+        ${product.momentTiers && product.momentTiers.length > 1 ? `<div class="section-title" style="font-size:1.1rem;">How many moments?</div>
+          <div class="viewrow" style="max-width:none;">${product.momentTiers.map((t) => `<button class="viewchip ${t === tier ? 'active' : ''}" data-tier="${t}">${t === 1 ? 'One big moment' : t + ' moments'}</button>`).join('')}</div>` : ''}
+
+        ${product.placement ? `<div class="section-title" style="font-size:1.1rem;">Placement</div>
+          <div class="viewrow" style="max-width:none;"><button class="viewchip ${placement === 'front' ? 'active' : ''}" data-place="front">Front</button><button class="viewchip ${placement === 'back' ? 'active' : ''}" data-place="back">Back</button></div>` : ''}
+
+        ${needsPicker() ? `<div class="section-title" style="font-size:1.1rem;">Choose moments ${maxPick() !== Infinity ? `<span class="muted">(${picked.length}/${maxPick()})</span>` : `<span class="muted">(${picked.length})</span>`}</div>
+          <div class="pick-list">${moments.map((m) => `<div class="pick ${selected.has(m.id) ? 'sel' : ''}" data-pick="${esc(m.id)}">
+            <div class="pthumb">${m.photos?.[0] ? `<img src="${esc(m.photos[0])}" alt="">` : '📝'}</div>
+            <div style="flex:1;"><div style="font-weight:600;">${esc(m.title || 'Untitled moment')}</div><div class="muted" style="font-size:0.82rem;">${esc(fullDate(m))}</div></div>
+            <div class="pcheck">${selected.has(m.id) ? '✓' : ''}</div></div>`).join('')}</div>` : `<div class="notice">This ${product.key === 'book' ? 'book' : 'item'} will use ${picked.length} moment${picked.length === 1 ? '' : 's'} from your journey.</div>`}
+
+        <div class="section-title" style="font-size:1.1rem;">Ship to</div>
+        <div class="panel">
+          <div class="field"><label>Full name</label><input id="s-name" value="${esc(u.name || '')}"></div>
+          <div class="field"><label>Street address</label><input id="s-addr" value="${esc(u.addressLine1 || '')}"></div>
+          <div class="row">
+            <div class="field"><label>City</label><input id="s-city" value="${esc(u.city || '')}"></div>
+            <div class="field"><label>State</label><select id="s-state"><option value="">—</option>${US_STATES.map((s) => `<option ${u.state === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+            <div class="field"><label>ZIP</label><input id="s-zip" value="${esc(u.zipCode || '')}" maxlength="10"></div>
+          </div>
+          <div class="field"><label>Phone</label><input id="s-phone" value="${esc(u.phone || '')}"></div>
+        </div>
+
+        <div class="order-bar">
+          <div><div class="muted" style="font-size:0.8rem;">Total</div><div style="font-size:1.5rem;font-weight:700;color:var(--blue);">${money(price())}</div></div>
+          <button class="btn" id="place">Place order</button>
+        </div>
+        <p class="muted" style="text-align:center;font-size:0.82rem;margin-top:8px;">No payment taken yet — we'll follow up to arrange payment &amp; delivery.</p>
+      </div>`;
+    // wire
+    root().querySelectorAll('[data-scope]').forEach((b) => (b.onclick = () => { scope = b.getAttribute('data-scope'); render(); }));
+    if ($('#decadeSel')) $('#decadeSel').onchange = (e) => { decade = +e.target.value; render(); };
+    root().querySelectorAll('[data-tier]').forEach((b) => (b.onclick = () => { tier = +b.getAttribute('data-tier'); while (selected.size > tier) selected.delete([...selected][selected.size - 1]); render(); }));
+    root().querySelectorAll('[data-place]').forEach((b) => (b.onclick = () => { placement = b.getAttribute('data-place'); render(); }));
+    root().querySelectorAll('[data-pick]').forEach((el2) => (el2.onclick = () => {
+      const id = el2.getAttribute('data-pick');
+      if (selected.has(id)) selected.delete(id);
+      else if (selected.size < maxPick()) selected.add(id);
+      else if (maxPick() === 1) { selected.clear(); selected.add(id); }
+      render();
+    }));
+    $('#place').onclick = placeOrder;
+  };
+
+  const placeOrder = async () => {
+    const picked = chosen();
+    const need = product.key === 'shirt' ? 1 : product.momentTiers && product.momentTiers.length > 1 ? tier : null;
+    if (!picked.length) return ($('#merch-msg').innerHTML = '<div class="error">Choose at least one moment.</div>', window.scrollTo(0, 0));
+    if (need && picked.length !== need) return ($('#merch-msg').innerHTML = `<div class="error">Please choose exactly ${need} moment${need === 1 ? '' : 's'}.</div>`, window.scrollTo(0, 0));
+    const name = $('#s-name').value.trim(), addr = $('#s-addr').value.trim(), city = $('#s-city').value.trim(), st = $('#s-state').value, zip = $('#s-zip').value.trim();
+    if (!name || !addr || !city || !st || !zip) return ($('#merch-msg').innerHTML = '<div class="error">Please fill in your full shipping address.</div>', window.scrollTo(0, 0));
+    const btn = $('#place'); btn.disabled = true; btn.textContent = 'Placing…';
+    try {
+      await api.placeOrder(u, {
+        productKey: product.key, productName: product.name, unitPriceCents: Math.round(price() * 100),
+        scope: product.key === 'book' ? scope : 'custom', placement,
+        momentIds: picked.map((m) => m.id), momentCount: picked.length,
+        photoCount: picked.reduce((n, m) => n + (m.photos?.length || 0), 0),
+        shippingName: name, shippingAddressLine1: addr, shippingCity: city, shippingState: st, shippingZip: zip, shippingPhone: $('#s-phone').value,
+      });
+      nav('#/orders?placed=1');
+    } catch (err) { $('#merch-msg').innerHTML = `<div class="error">${esc(err.message)}</div>`; btn.disabled = false; btn.textContent = 'Place order'; window.scrollTo(0, 0); }
+  };
+  render();
+}
+
+// ---- My Orders -------------------------------------------------------------
+async function viewOrders() {
+  renderTopbar('profile');
+  setLoading();
+  const orders = await api.getMyOrders(state.user.id);
+  const placed = location.hash.includes('placed=1');
+  const statusLabel = (s) => ({ awaiting_payment: 'Awaiting payment', paid: 'Paid', in_production: 'In production', shipped: 'Shipped' }[s] || s);
+  root().innerHTML = `
+    <div class="wrap">
+      <a class="back" href="#/merch">← Store</a>
+      <div class="section-title">My Orders</div>
+      ${placed ? '<div class="success">Order placed! We\'ll be in touch to arrange payment and delivery.</div>' : ''}
+      ${orders.length ? orders.map((o) => `<div class="panel" style="margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div><div style="font-weight:700;color:var(--blue);font-size:1.1rem;">${esc(o.product_name)}</div>
+            <div class="muted" style="font-size:0.85rem;">${o.moment_count} moment${o.moment_count === 1 ? '' : 's'}${o.placement ? ' · ' + o.placement : ''} · ${new Date(o.created_at).toLocaleDateString()}</div></div>
+          <div style="text-align:right;"><div style="font-weight:700;">${money((o.unit_price_cents || 0) / 100)}</div><div class="chip">${statusLabel(o.status)}</div></div>
+        </div></div>`).join('')
+        : '<div class="empty"><div class="big">📦</div>No orders yet.<br><a href="#/merch">Order a keepsake →</a></div>'}
+    </div>`;
+}
+
 // ---- Report modal ----------------------------------------------------------
 function openReport({ reportedUserId = null, momentId = null, commentId = null, label = 'this' }) {
   const back = document.createElement('div');
@@ -820,7 +1380,7 @@ function openReport({ reportedUserId = null, momentId = null, commentId = null, 
 async function route() {
   const hash = location.hash || '#/journey';
   const parts = hash.replace(/^#\//, '').split('/');
-  const head = parts[0] || 'journey';
+  const head = (parts[0] || 'journey').split('?')[0];
   const publicRoutes = ['login', 'forgot', 'reset'];
 
   if (!state.user) {
@@ -838,11 +1398,20 @@ async function route() {
       case 'circle': await viewCircle(); break;
       case 'notifications': await viewNotifications(); break;
       case 'settings': await viewSettings(); break;
+      case 'import': await viewImport(); break;
+      case 'shared': await viewShared(); break;
+      case 'merch': parts[1] ? await viewMerchProduct(parts[1]) : await viewMerch(); break;
+      case 'orders': await viewOrders(); break;
       case 'add': await viewMomentForm(null); break;
       case 'edit': await viewMomentForm(parts[1]); break;
       case 'moment': await viewMoment(parts[1]); break;
       case 'u': await viewPerson(parts[1]); break;
-      case 'profile': parts[1] === 'edit' ? await viewProfileEdit() : await viewMyProfile(); break;
+      case 'profile':
+        if (parts[1] === 'edit') await viewProfileEdit();
+        else if (parts[1] === 'qr') await viewQR();
+        else if (parts[1] === 'customize') await viewCustomize();
+        else await viewMyProfile();
+        break;
       default: await viewJourney();
     }
   } catch (err) {
