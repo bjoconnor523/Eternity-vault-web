@@ -516,6 +516,11 @@ export const addMemory = async (self, memory) => {
       caption: memory.caption || '',
       story: memory.story || '',
       photos,
+      place_city: memory.place?.city || null,
+      place_region: memory.place?.region || null,
+      place_country: memory.place?.country || null,
+      place_lat: memory.place?.lat ?? null,
+      place_lng: memory.place?.lng ?? null,
       sealed_until: memory.sealedUntil || null,
       milestone: memory.milestone || null,
     })
@@ -537,6 +542,13 @@ export const updateMemory = async (self, id, patch, prevTags) => {
   if ('caption' in patch) cols.caption = patch.caption || '';
   if ('story' in patch) cols.story = patch.story || '';
   if ('photos' in patch) cols.photos = await uploadPhotos(self.id, patch.photos || []);
+  if ('place' in patch) {
+    cols.place_city = patch.place?.city || null;
+    cols.place_region = patch.place?.region || null;
+    cols.place_country = patch.place?.country || null;
+    cols.place_lat = patch.place?.lat ?? null;
+    cols.place_lng = patch.place?.lng ?? null;
+  }
   if ('sealedUntil' in patch) cols.sealed_until = patch.sealedUntil || null;
   if ('milestone' in patch) cols.milestone = patch.milestone || null;
   if (Object.keys(cols).length) {
@@ -734,6 +746,55 @@ export const pushNotification = async (self, toUserId, notif) => {
     year: notif.year ?? null,
     body: notif.body ?? null,
   });
+};
+
+// ---- Safety: blocks + reports --------------------------------------------
+export const fetchBlockedIds = async (userId) => {
+  const { data } = await supabase
+    .from('blocks')
+    .select('blocker_id, blocked_id')
+    .or(`blocker_id.eq.${userId},blocked_id.eq.${userId}`);
+  const ids = new Set();
+  for (const b of data || []) ids.add(b.blocker_id === userId ? b.blocked_id : b.blocker_id);
+  return ids;
+};
+
+export const blockUser = async (self, otherId) => {
+  const { error } = await supabase.from('blocks').insert({ blocker_id: self.id, blocked_id: otherId });
+  if (error) throw new Error('Could not block this person.');
+};
+
+export const unblockUser = async (selfId, otherId) => {
+  await supabase.from('blocks').delete().eq('blocker_id', selfId).eq('blocked_id', otherId);
+};
+
+export const reportContent = async (self, { reportedUserId = null, momentId = null, commentId = null, reason, details = '' }) => {
+  const { error } = await supabase.from('reports').insert({
+    reporter_id: self.id,
+    reported_user_id: reportedUserId,
+    moment_id: momentId,
+    comment_id: commentId,
+    reason,
+    details: details || '',
+  });
+  if (error) throw new Error('Could not send your report.');
+};
+
+// ---- Account + password ---------------------------------------------------
+export const sendPasswordReset = async (email, redirectTo) => {
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo });
+  if (error) throw new Error(error.message);
+};
+
+export const updatePassword = async (newPassword) => {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw new Error(error.message);
+};
+
+export const deleteAccount = async () => {
+  const { error } = await supabase.functions.invoke('delete-account');
+  if (error) throw new Error('Could not delete your account. Please try again.');
+  await supabase.auth.signOut();
 };
 
 export { byChrono };

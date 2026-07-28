@@ -1,0 +1,14 @@
+{
+  "name": "Eternity Vault",
+  "short_name": "Eternity Vault",
+  "description": "A life, recorded in your own words, pictures and voice — kept forever.",
+  "start_url": "/app/",
+  "scope": "/app/",
+  "display": "standalone",
+  "background_color": "#FDF8EA",
+  "theme_color": "#1B4B8F",
+  "icons": [
+    { "src": "../brand/eternity-vault-mark.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" },
+    { "src": "../brand/eternity-vault-mark.png", "sizes": "1024x1024", "type": "image/png", "purpose": "maskable" }
+  ]
+}
