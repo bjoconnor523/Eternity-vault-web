@@ -1,0 +1,739 @@
+// ============================================================================
+// api.js — the web app's data layer.
+//
+// This is a faithful port of the mobile app's src/context/AppContext.js: same
+// Supabase tables, the same `moments_feed` view (which masks sealed capsules
+// server-side), the same private `photos`/`audio` buckets re-signed on read,
+// and the same snake_case-DB <-> camelCase-app field mapping. If you change how
+// data is shaped here, keep it in step with the phone app.
+// ============================================================================
+import { supabase } from './supabase.js';
+
+// ---- Media: private buckets, re-signed on read -----------------------------
+// The photos/audio buckets are private. A stored value is a storage PATH (or an
+// old signed URL we can recover the path from). We never trust a stored token —
+// every read mints a fresh 1-year signed URL, so media stays "kept forever."
+const SIGNED_URL_TTL = 60 * 60 * 24 * 365; // 1 year
+
+const pathFromStored = (bucket, value) => {
+  if (!value || typeof value !== 'string') return null;
+  if (/^https?:\/\//i.test(value)) {
+    const m = value.match(new RegExp(`/object/(?:sign|public|authenticated)/${bucket}/([^?]+)`));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  // A bare path has no scheme; a blob:/data: uri does and can't be re-signed.
+  return /^[a-z][a-z0-9+.-]*:/i.test(value) ? null : value;
+};
+
+const signMap = async (bucket, paths) => {
+  const map = new Map();
+  if (!paths?.length) return map;
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrls(paths, SIGNED_URL_TTL);
+  if (error || !data) return map;
+  data.forEach((d) => {
+    if (d && !d.error && d.signedUrl) map.set(d.path, d.signedUrl);
+  });
+  return map;
+};
+
+const signStoredUrls = async (bucket, values) => {
+  const arr = values || [];
+  if (!arr.length) return arr;
+  const paths = arr.map((v) => pathFromStored(bucket, v));
+  const map = await signMap(bucket, [...new Set(paths.filter(Boolean))]);
+  return arr.map((v, i) => (paths[i] && map.get(paths[i])) || v);
+};
+const signStoredUrl = async (bucket, value) =>
+  value ? (await signStoredUrls(bucket, [value]))[0] : value;
+
+const signedUrlFor = async (bucket, path) => {
+  if (!path) return null;
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, SIGNED_URL_TTL);
+  if (error) return null;
+  return data?.signedUrl || null;
+};
+
+const hydrateMoments = async (list) => {
+  const arr = list || [];
+  if (!arr.length) return arr;
+  const photoPaths = [
+    ...new Set(arr.flatMap((m) => (m.photos || []).map((v) => pathFromStored('photos', v)).filter(Boolean))),
+  ];
+  const audioPaths = [...new Set(arr.map((m) => pathFromStored('audio', m.audioUrl)).filter(Boolean))];
+  const [photoMap, audioMap] = await Promise.all([signMap('photos', photoPaths), signMap('audio', audioPaths)]);
+  return arr.map((m) => {
+    const photos = (m.photos || []).map((v) => {
+      const p = pathFromStored('photos', v);
+      return (p && photoMap.get(p)) || v;
+    });
+    const ap = pathFromStored('audio', m.audioUrl);
+    return { ...m, photos, photoUri: photos[0] || null, audioUrl: (ap && audioMap.get(ap)) || m.audioUrl || null };
+  });
+};
+
+const hydrateUsers = async (list) => {
+  const arr = list || [];
+  if (!arr.length) return arr;
+  const paths = [
+    ...new Set(
+      arr
+        .flatMap((u) => [u?.avatarUri, ...(u?.avatarPhotos || [])])
+        .map((v) => pathFromStored('photos', v))
+        .filter(Boolean)
+    ),
+  ];
+  const map = await signMap('photos', paths);
+  const resolve = (v) => {
+    const p = pathFromStored('photos', v);
+    return (p && map.get(p)) || v;
+  };
+  return arr.map((u) =>
+    u
+      ? {
+          ...u,
+          avatarUri: u.avatarUri ? resolve(u.avatarUri) : u.avatarUri,
+          avatarPhotos: u.avatarPhotos ? u.avatarPhotos.map(resolve) : u.avatarPhotos,
+        }
+      : u
+  );
+};
+export const hydrateUser = async (u) => (u ? (await hydrateUsers([u]))[0] : u);
+
+// ---- Photo upload (browser) ------------------------------------------------
+// Mirrors the app: downscale the long edge to 1600px, re-encode JPEG, upload to
+// the private `photos` bucket, return a fresh signed URL. Videos pass through.
+const MAX_DIMENSION = 1600;
+const JPEG_QUALITY = 0.82;
+const isVideoFile = (file) => (file?.type || '').startsWith('video/');
+
+const compressImage = (file) =>
+  new Promise((resolve) => {
+    try {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const longest = Math.max(img.width, img.height);
+        const scale = longest > MAX_DIMENSION ? MAX_DIMENSION / longest : 1;
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+          (blob) => {
+            URL.revokeObjectURL(url);
+            resolve(blob || file);
+          },
+          'image/jpeg',
+          JPEG_QUALITY
+        );
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(file);
+      };
+      img.src = url;
+    } catch {
+      resolve(file);
+    }
+  });
+
+// Upload one File/Blob (or pass through an existing https URL) → stored URL.
+export const uploadOnePhoto = async (userId, fileOrUrl) => {
+  if (!fileOrUrl) return fileOrUrl;
+  if (typeof fileOrUrl === 'string') return fileOrUrl; // already uploaded / remote
+  try {
+    const isVideo = isVideoFile(fileOrUrl);
+    const body = isVideo ? fileOrUrl : await compressImage(fileOrUrl);
+    const ext = isVideo ? (fileOrUrl.name?.split('.').pop() || 'mp4') : 'jpg';
+    const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { error } = await supabase.storage
+      .from('photos')
+      .upload(path, body, { contentType: isVideo ? fileOrUrl.type : 'image/jpeg', upsert: false });
+    if (error) return null;
+    return (await signedUrlFor('photos', path)) || null;
+  } catch {
+    return null;
+  }
+};
+
+export const uploadPhotos = async (userId, items) => {
+  const out = [];
+  for (const it of items || []) {
+    const u = await uploadOnePhoto(userId, it);
+    if (u) out.push(u);
+  }
+  return out;
+};
+
+// ---- Field mapping: DB row -> app shape ------------------------------------
+const journeyFieldsFromRow = (p) => ({
+  yearFont: p.year_font || 'classic',
+  locationFont: p.location_font || 'classic',
+  locationFontColor: p.location_font_color || 'default',
+  titleFont: p.title_font || 'classic',
+  titleFontColor: p.title_font_color || 'default',
+  captionFont: p.caption_font || 'classic',
+  captionFontColor: p.caption_font_color || 'default',
+  storyFont: p.story_font || 'classic',
+  storyFontColor: p.story_font_color || 'default',
+});
+
+export const profileToUser = (p) => ({
+  id: p.id,
+  name: p.name,
+  handle: p.handle,
+  avatarUri: p.avatar_url,
+  avatarPhotos:
+    Array.isArray(p.avatar_photos) && p.avatar_photos.length
+      ? p.avatar_photos
+      : p.avatar_url
+      ? [p.avatar_url]
+      : [],
+  avatarRotate: p.avatar_rotate || 'day',
+  birthYear: p.birth_year,
+  birthMonth: p.birth_month,
+  birthDay: p.birth_day,
+  hometown: p.hometown,
+  bio: p.bio,
+  epitaph: p.epitaph || '',
+  isModerator: !!p.is_moderator,
+  accountType: p.account_type || 'personal',
+  keeperId: p.keeper_id || null,
+  memorialState: p.memorial_state || 'living',
+  sealedAt: p.sealed_at || null,
+  favoriteColor: p.favorite_color || '',
+  favoriteNumber: p.favorite_number,
+  companionsLimit: p.companions_limit || 8,
+  journeyPhotoShape: p.journey_photo_shape || 'rounded',
+  journeyBg: p.journey_bg || 'default',
+  ...journeyFieldsFromRow(p),
+  tagPermission: p.tag_permission || 'anyone',
+  links: Array.isArray(p.links) ? p.links : [],
+  profileComplete: !!p.handle,
+});
+
+const momentFromRow = (row) => ({
+  id: row.id,
+  ownerId: row.user_id,
+  year: row.year,
+  month: row.month,
+  day: row.day,
+  location: row.location || '',
+  title: row.title || '',
+  caption: row.caption || '',
+  story: row.story || '',
+  photos: row.photos || [],
+  photoUri: (row.photos && row.photos[0]) || null,
+  audioUrl: row.audio_url || null,
+  placeCity: row.place_city || null,
+  placeRegion: row.place_region || null,
+  placeCountry: row.place_country || null,
+  placeLat: row.place_lat ?? null,
+  placeLng: row.place_lng ?? null,
+  sealedUntil: row.sealed_until || null,
+  style: row.style || null,
+  milestone: row.milestone || null,
+  adopted: !!row.source_moment_id,
+  tags: (row.moment_tags || []).map((t) => ({
+    label: t.label,
+    handle: t.handle,
+    userId: t.tagged_user_id,
+    confirmed: !!t.confirmed,
+  })),
+  createdAt: row.created_at,
+});
+
+// Chronological: year, then month, then day, then created_at.
+const byChrono = (a, b) =>
+  a.year - b.year ||
+  (a.month || 13) - (b.month || 13) ||
+  (a.day || 32) - (b.day || 32) ||
+  String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+
+// ---- Auth ------------------------------------------------------------------
+const HANDLE_RE = /^[a-z0-9_]{3,15}$/;
+
+const rowToSelfUser = (profile, email) => ({
+  ...profileToUser(profile),
+  email: email || '',
+  phone: profile.phone || '',
+  addressLine1: profile.address_line1 || '',
+  city: profile.city || '',
+  state: profile.state || '',
+  zipCode: profile.zip_code || '',
+  createdAt: profile.created_at,
+});
+
+export const getSessionUser = async () => {
+  const {
+    data: { user: authUser },
+  } = await supabase.auth.getUser();
+  if (!authUser) return null;
+  const { data, error } = await supabase.from('profiles').select('*').eq('id', authUser.id).maybeSingle();
+  if (error || !data) return null;
+  if (data.banned) {
+    await supabase.auth.signOut();
+    return null;
+  }
+  return hydrateUser(rowToSelfUser(data, authUser.email));
+};
+
+export const logIn = async ({ email, password }) => {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password,
+  });
+  if (error || !data.user) {
+    if ((error?.message || '').toLowerCase().includes('not confirmed')) {
+      const e = new Error('Confirm your email first — check your inbox for our link.');
+      e.code = 'email-not-confirmed';
+      throw e;
+    }
+    throw new Error('Invalid email or password.');
+  }
+  let { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle();
+  if (!profile) throw new Error('Could not load your profile.');
+  if (profile.banned) {
+    await supabase.auth.signOut();
+    throw new Error('This account has been suspended.');
+  }
+  return hydrateUser(rowToSelfUser(profile, data.user.email));
+};
+
+export const signUp = async ({ name, email, handle, password, accountType = 'personal' }) => {
+  const emailNorm = email.trim().toLowerCase();
+  const handleNorm = handle.trim().toLowerCase().replace(/^@/, '');
+  if (!HANDLE_RE.test(handleNorm)) {
+    throw new Error('Handles are 3–15 characters: lowercase letters, numbers, underscores.');
+  }
+  const { data: existingHandle } = await supabase.from('profiles').select('id').eq('handle', handleNorm).limit(1);
+  if (existingHandle?.length > 0) throw new Error(`@${handleNorm} is taken — try another handle.`);
+
+  const { data, error } = await supabase.auth.signUp({ email: emailNorm, password });
+  if (error) throw new Error(error.message);
+  if (!data.user) throw new Error('Sign up failed.');
+  if ((data.user.identities?.length ?? 0) === 0) {
+    throw new Error('That email already has an account — try logging in instead.');
+  }
+  if (!data.session) {
+    // Email confirmation is on: no session yet, so we can't write the profile
+    // row (RLS needs a signed-in user). Stash and finish on first login.
+    localStorage.setItem(
+      'ev_pending_signup',
+      JSON.stringify({ email: emailNorm, name: name.trim(), handle: handleNorm, accountType })
+    );
+    return { needsConfirmation: true, email: emailNorm };
+  }
+  const { error: profileError } = await supabase.from('profiles').insert({
+    id: data.user.id,
+    name: name.trim(),
+    handle: handleNorm,
+    account_type: accountType,
+  });
+  if (profileError) {
+    await supabase.auth.signOut();
+    throw new Error('Could not create your profile.');
+  }
+  return hydrateUser(rowToSelfUser({ id: data.user.id, name: name.trim(), handle: handleNorm, account_type: accountType }, emailNorm));
+};
+
+// Finish a confirmed-email signup: create the profile row on first login.
+export const ensureProfileRow = async () => {
+  const {
+    data: { user: authUser },
+  } = await supabase.auth.getUser();
+  if (!authUser) return null;
+  const { data: existing } = await supabase.from('profiles').select('*').eq('id', authUser.id).maybeSingle();
+  if (existing) return hydrateUser(rowToSelfUser(existing, authUser.email));
+
+  let stash = null;
+  try {
+    stash = JSON.parse(localStorage.getItem('ev_pending_signup') || 'null');
+  } catch {}
+  if (stash && stash.email !== authUser.email) stash = null;
+  const base =
+    stash?.handle ||
+    (authUser.email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 12).padEnd(3, '0') ||
+    'member';
+  const tryInsert = (handle) =>
+    supabase
+      .from('profiles')
+      .insert({ id: authUser.id, name: stash?.name || '', handle, account_type: stash?.accountType || 'personal' })
+      .select()
+      .single();
+  let { data: row, error } = await tryInsert(base);
+  if (error) ({ data: row } = await tryInsert(`${base.slice(0, 11)}${Math.floor(100 + Math.random() * 900)}`));
+  if (row) localStorage.removeItem('ev_pending_signup');
+  return row ? hydrateUser(rowToSelfUser(row, authUser.email)) : null;
+};
+
+export const resendConfirmation = async (email) => {
+  const { error } = await supabase.auth.resend({ type: 'signup', email: email.trim().toLowerCase() });
+  return !error;
+};
+
+export const logOut = async () => {
+  await supabase.auth.signOut();
+};
+
+// ---- Profiles --------------------------------------------------------------
+export const fetchUserById = async (id) => {
+  const { data } = await supabase.from('profiles').select('*').eq('id', id).maybeSingle();
+  return data ? hydrateUser(profileToUser(data)) : null;
+};
+
+export const fetchUserByHandle = async (handle) => {
+  const h = handle.trim().toLowerCase().replace(/^@/, '');
+  const { data } = await supabase.from('profiles').select('*').eq('handle', h).maybeSingle();
+  return data ? hydrateUser(profileToUser(data)) : null;
+};
+
+export const updateProfile = async (userId, patch) => {
+  const next = { ...patch };
+  if ('avatarFile' in patch && patch.avatarFile) {
+    const url = await uploadOnePhoto(userId, patch.avatarFile);
+    if (url) {
+      next.avatarUri = url;
+      next.avatarPhotos = [url];
+    }
+    delete next.avatarFile;
+  }
+  const dbPatch = {};
+  const map = {
+    name: 'name',
+    avatarUri: 'avatar_url',
+    avatarPhotos: 'avatar_photos',
+    birthYear: 'birth_year',
+    birthMonth: 'birth_month',
+    birthDay: 'birth_day',
+    hometown: 'hometown',
+    bio: 'bio',
+    epitaph: 'epitaph',
+    favoriteColor: 'favorite_color',
+    favoriteNumber: 'favorite_number',
+    journeyBg: 'journey_bg',
+    journeyPhotoShape: 'journey_photo_shape',
+    tagPermission: 'tag_permission',
+  };
+  for (const [k, col] of Object.entries(map)) if (k in next) dbPatch[col] = next[k];
+  if (Object.keys(dbPatch).length) {
+    const { error } = await supabase.from('profiles').update(dbPatch).eq('id', userId);
+    if (error) throw new Error('Could not save your profile.');
+  }
+  return next;
+};
+
+// ---- Moments ---------------------------------------------------------------
+const MOMENTS_PAGE = 150;
+
+export const getMomentsOf = async (userId) => {
+  const out = [];
+  for (let page = 0; ; page++) {
+    const { data, error } = await supabase
+      .from('moments_feed') // masks sealed capsules server-side
+      .select('*')
+      .eq('user_id', userId)
+      .order('year', { ascending: false })
+      .order('created_at', { ascending: false })
+      .range(page * MOMENTS_PAGE, (page + 1) * MOMENTS_PAGE - 1);
+    if (error) break;
+    out.push(...(data || []).map(momentFromRow));
+    if ((data?.length || 0) < MOMENTS_PAGE) break;
+  }
+  return hydrateMoments(out.sort(byChrono));
+};
+
+export const getMomentById = async (id) => {
+  const { data, error } = await supabase.from('moments_feed').select('*').eq('id', id).maybeSingle();
+  if (error || !data) return null;
+  return (await hydrateMoments([momentFromRow(data)]))[0];
+};
+
+const normalizeTag = (t) =>
+  typeof t === 'string'
+    ? { label: t, handle: null, userId: null, confirmed: false }
+    : { label: t.label, handle: t.handle || null, userId: t.userId || null, confirmed: !!t.confirmed };
+
+const insertTags = async (momentId, tags) => {
+  if (!tags.length) return;
+  await supabase.from('moment_tags').insert(
+    tags.map((t) => ({
+      moment_id: momentId,
+      tagged_user_id: t.userId || null,
+      label: t.label,
+      handle: t.handle || null,
+      confirmed: !!t.confirmed,
+    }))
+  );
+};
+
+// Resolve free-text tags: an "@handle" that matches a real member links to them.
+const resolveTags = async (rawTags) => {
+  const tags = (rawTags || []).map(normalizeTag).filter((t) => (t.label || '').trim());
+  const handles = tags.map((t) => (t.label.startsWith('@') ? t.label.slice(1).toLowerCase() : null)).filter(Boolean);
+  if (handles.length) {
+    const { data } = await supabase.from('profiles').select('id, handle, name').in('handle', handles);
+    const byHandle = new Map((data || []).map((p) => [p.handle, p]));
+    return tags.map((t) => {
+      if (t.label.startsWith('@')) {
+        const p = byHandle.get(t.label.slice(1).toLowerCase());
+        if (p) return { label: p.name || t.label, handle: p.handle, userId: p.id, confirmed: false };
+      }
+      return t;
+    });
+  }
+  return tags;
+};
+
+const notifyNewTags = async (self, tags, prevTags, moment) => {
+  const prevIds = new Set((prevTags || []).map((t) => t.userId).filter(Boolean));
+  for (const t of tags) {
+    if (t.userId && t.userId !== self.id && !prevIds.has(t.userId)) {
+      await pushNotification(self, t.userId, {
+        type: 'tag',
+        memoryId: moment.id,
+        memoryTitle: moment.title || 'a moment',
+        year: moment.year,
+      });
+    }
+  }
+};
+
+export const addMemory = async (self, memory) => {
+  const tags = await resolveTags(memory.tags);
+  const photos = await uploadPhotos(self.id, memory.photos || []);
+  const month = memory.month >= 1 && memory.month <= 12 ? memory.month : null;
+  const day = month && memory.day >= 1 && memory.day <= 31 ? memory.day : null;
+  const { data: row, error } = await supabase
+    .from('moments')
+    .insert({
+      user_id: self.id,
+      year: memory.year,
+      month,
+      day,
+      location: (memory.location || '').trim(),
+      title: memory.title || '',
+      caption: memory.caption || '',
+      story: memory.story || '',
+      photos,
+      sealed_until: memory.sealedUntil || null,
+      milestone: memory.milestone || null,
+    })
+    .select()
+    .single();
+  if (error || !row) throw new Error('Could not save the moment.');
+  await insertTags(row.id, tags);
+  await notifyNewTags(self, tags, [], { id: row.id, title: row.title, year: row.year });
+  return row;
+};
+
+export const updateMemory = async (self, id, patch, prevTags) => {
+  const cols = {};
+  if ('year' in patch) cols.year = patch.year;
+  if ('month' in patch) cols.month = patch.month >= 1 && patch.month <= 12 ? patch.month : null;
+  if ('day' in patch) cols.day = patch.day >= 1 && patch.day <= 31 ? patch.day : null;
+  if ('location' in patch) cols.location = (patch.location || '').trim();
+  if ('title' in patch) cols.title = patch.title || '';
+  if ('caption' in patch) cols.caption = patch.caption || '';
+  if ('story' in patch) cols.story = patch.story || '';
+  if ('photos' in patch) cols.photos = await uploadPhotos(self.id, patch.photos || []);
+  if ('sealedUntil' in patch) cols.sealed_until = patch.sealedUntil || null;
+  if ('milestone' in patch) cols.milestone = patch.milestone || null;
+  if (Object.keys(cols).length) {
+    const { error } = await supabase.from('moments').update(cols).eq('id', id);
+    if (error) throw new Error('Could not update the moment.');
+  }
+  if (patch.tags) {
+    const prevByUser = {};
+    for (const t of prevTags || []) if (t.userId) prevByUser[t.userId] = t;
+    const tags = (await resolveTags(patch.tags)).map((t) =>
+      t.userId && prevByUser[t.userId]?.confirmed ? { ...t, confirmed: true } : t
+    );
+    await supabase.from('moment_tags').delete().eq('moment_id', id);
+    await insertTags(id, tags);
+    await notifyNewTags(self, tags, prevTags || [], {
+      id,
+      title: 'title' in cols ? cols.title : patch.title,
+      year: 'year' in cols ? cols.year : patch.year,
+    });
+  }
+};
+
+export const deleteMemory = async (id) => {
+  await supabase.from('moments').delete().eq('id', id);
+};
+
+// ---- Circle ----------------------------------------------------------------
+export const fetchCircleOf = async (userId) => {
+  const { data } = await supabase.from('circle').select('a,b').or(`a.eq.${userId},b.eq.${userId}`);
+  return data || [];
+};
+
+export const fetchCircleCountOf = async (userId) => {
+  const { count } = await supabase
+    .from('circle')
+    .select('id', { count: 'exact', head: true })
+    .or(`a.eq.${userId},b.eq.${userId}`);
+  return count || 0;
+};
+
+export const addToCircle = async (self, otherId) => {
+  const { error } = await supabase.from('circle').insert({ a: self.id, b: otherId });
+  if (error) throw new Error('Could not add to your Circle.');
+  await pushNotification(self, otherId, { type: 'circle' });
+};
+
+export const removeFromCircle = async (selfId, otherId) => {
+  await supabase
+    .from('circle')
+    .delete()
+    .or(`and(a.eq.${selfId},b.eq.${otherId}),and(a.eq.${otherId},b.eq.${selfId})`);
+};
+
+// ---- Directory / search / trending ----------------------------------------
+export const searchOthers = async (selfId, query) => {
+  const q = (query || '').trim().replace(/^@/, '');
+  let req = supabase.from('profiles').select('*').neq('id', selfId).limit(30);
+  if (q) req = req.or(`name.ilike.%${q}%,handle.ilike.%${q}%`);
+  else req = req.order('created_at', { ascending: false });
+  const { data } = await req;
+  const mapped = (data || []).map(profileToUser).filter((u) => u.profileComplete);
+  return hydrateUsers(mapped);
+};
+
+export const getTrendingProfiles = async (hoursBack = 6, limitN = 20) => {
+  const { data, error } = await supabase.rpc('get_trending_profiles', { hours_back: hoursBack, limit_n: limitN });
+  if (error) return [];
+  return (data || []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    handle: row.handle,
+    avatarUri: row.avatar_url,
+    viewCount: row.view_count,
+  }));
+};
+
+export const recordProfileView = async (selfId, viewedId) => {
+  if (!selfId || !viewedId || viewedId === selfId) return;
+  try {
+    await supabase.from('profile_views').insert({ viewer_id: selfId, viewed_id: viewedId });
+  } catch {}
+};
+
+// ---- Moment detail: comments + contributions ------------------------------
+export const getComments = async (momentId) => {
+  const { data, error } = await supabase
+    .from('comments')
+    .select('*, profiles(name, handle)')
+    .eq('moment_id', momentId)
+    .order('pinned', { ascending: false })
+    .order('created_at', { ascending: true });
+  if (error) return [];
+  return (data || []).map((r) => ({
+    id: r.id,
+    userId: r.user_id,
+    name: r.profiles?.name || 'Someone',
+    handle: r.profiles?.handle || '',
+    text: r.text,
+    pinned: r.pinned,
+    createdAt: r.created_at,
+  }));
+};
+
+export const addComment = async (self, momentId, text) => {
+  if (!text.trim()) return;
+  const { error } = await supabase.from('comments').insert({ moment_id: momentId, user_id: self.id, text: text.trim() });
+  if (error) throw new Error('Could not post your comment.');
+  const { data: moment } = await supabase.from('moments').select('user_id, title, year').eq('id', momentId).single();
+  if (moment && moment.user_id !== self.id) {
+    await pushNotification(self, moment.user_id, {
+      type: 'comment',
+      memoryId: momentId,
+      memoryTitle: moment.title || 'a moment',
+      year: moment.year,
+      body: text.trim().slice(0, 140),
+    });
+  }
+};
+
+export const deleteComment = async (commentId) => {
+  await supabase.from('comments').delete().eq('id', commentId);
+};
+
+export const getContributions = async (momentId) => {
+  const { data, error } = await supabase
+    .from('moment_contributions')
+    .select('*, profiles(name, handle)')
+    .eq('moment_id', momentId)
+    .order('created_at', { ascending: true });
+  if (error) return [];
+  return Promise.all(
+    (data || []).map(async (r) => ({
+      id: r.id,
+      contributorId: r.contributor_id,
+      name: r.profiles?.name || 'Someone',
+      handle: r.profiles?.handle || '',
+      photos: await signStoredUrls('photos', r.photos || []),
+      note: r.note || '',
+      audioUrl: await signStoredUrl('audio', r.audio_url || null),
+      createdAt: r.created_at,
+    }))
+  );
+};
+
+// ---- Notifications ---------------------------------------------------------
+const notifFromRow = (r) => ({
+  id: r.id,
+  type: r.type,
+  fromId: r.from_id,
+  fromName: r.from_name,
+  fromHandle: r.from_handle,
+  memoryId: r.moment_id,
+  memoryTitle: r.moment_title,
+  year: r.year,
+  body: r.body,
+  read: r.read,
+  createdAt: r.created_at,
+});
+
+export const fetchNotificationsOf = async (userId) => {
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('*')
+    .eq('recipient_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (error) return [];
+  return (data || []).map(notifFromRow);
+};
+
+export const markNotificationsRead = async (userId) => {
+  await supabase.from('notifications').update({ read: true }).eq('recipient_id', userId).eq('read', false);
+};
+
+export const unreadCount = async (userId) => {
+  const { count } = await supabase
+    .from('notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('recipient_id', userId)
+    .eq('read', false);
+  return count || 0;
+};
+
+// Write a notification row for another member (best-effort push via edge fn).
+export const pushNotification = async (self, toUserId, notif) => {
+  if (!toUserId || toUserId === self.id) return;
+  await supabase.from('notifications').insert({
+    recipient_id: toUserId,
+    type: notif.type,
+    from_id: self.id,
+    from_name: self.name,
+    from_handle: self.handle,
+    moment_id: notif.memoryId ?? null,
+    moment_title: notif.memoryTitle ?? null,
+    year: notif.year ?? null,
+    body: notif.body ?? null,
+  });
+};
+
+export { byChrono };
