@@ -276,30 +276,68 @@ function monumentHTML(u, moments, circleCount, isSelf) {
 }
 
 // ---- Timeline --------------------------------------------------------------
+const isVideoUrl = (u) => /\.(mp4|mov|webm|m4v)(\?|$)/i.test(u || '');
+const mediaTag = (url) => (isVideoUrl(url) ? `<video src="${esc(url)}" controls preload="metadata"></video>` : `<img src="${esc(url)}" loading="lazy" alt="">`);
+
+// The iconic central thread: a white ribbon "spine" with blue dots coiling
+// around it like a helix — a snake around a sword. One SVG pattern period tiles
+// seamlessly down the whole journey, any length. Ported from the app's
+// HelixStitch (components/journey.js): near side of each wrap is bigger + bolder,
+// far side smaller + fainter, so it reads as wrapping AROUND the thread.
+const HELIX_PERIOD = 40, HELIX_DOTS = 8, HELIX_INNER = 11;
+function helixSvg() {
+  const dots = Array.from({ length: HELIX_DOTS }, (_, i) => {
+    const t = (i / HELIX_DOTS) * Math.PI * 2;
+    const along = ((i + 0.5) / HELIX_DOTS) * HELIX_PERIOD;
+    const across = HELIX_INNER / 2 + Math.sin(t) * (HELIX_INNER / 2 - 1.2);
+    const depth = (Math.cos(t) + 1) / 2; // 1 = front of the coil, 0 = behind
+    return `<circle cx="${(across + 1.5).toFixed(2)}" cy="${along.toFixed(2)}" r="${(0.9 + depth * 0.9).toFixed(2)}" fill="#1B4B8F" opacity="${(0.28 + depth * 0.55).toFixed(2)}"/>`;
+  }).join('');
+  return `<svg width="14" height="100%" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <defs><pattern id="hx" patternUnits="userSpaceOnUse" width="14" height="${HELIX_PERIOD}">${dots}</pattern></defs>
+    <rect x="1.5" width="11" height="100%" rx="3" fill="#FFFDF8" stroke="#E9DFC4" stroke-width="1"/>
+    <rect width="14" height="100%" fill="url(#hx)"/></svg>`;
+}
+
+// One moment, rendered like a page in a printed memoir. Adaptive: photo moments
+// lead with 1–2 big natural-aspect images; text-only moments emphasize the
+// words (bigger type, drop-cap). Colour signals solo (soft blue) vs companion
+// (soft amber). A moment may be just a title + a voice note — that's fine.
 function momentCardHTML(m) {
-  // Solo (your own, nobody else) rides the RIGHT of the spine; companion
-  // moments (tagged people, or adopted from someone else) ride the LEFT.
   const companion = m.adopted || (m.tags && m.tags.length);
-  const side = companion ? 'side-left' : 'side-right';
+  const cls = companion ? 'companion' : 'solo';
   const sealedFuture = m.sealedUntil && new Date(m.sealedUntil) > new Date();
   if (sealedFuture) {
-    return `<div class="moment-row ${side}"><div class="tabline"><div class="datetab">${esc(dateTabLabel(m))}</div></div>
-      <div class="sealed-card"><div class="lock">🔒</div><div style="font-weight:600;margin-top:6px;">A sealed time capsule</div>
-      <div class="muted" style="margin-top:4px;">Opens ${esc(new Date(m.sealedUntil).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }))}</div></div></div>`;
+    return `<article class="jmoment ${cls}" data-moment="${esc(m.id)}"><div class="jdate">${esc(dateTabLabel(m))}</div>
+      <div class="jsealed"><div class="lock">🔒</div><div class="st">A sealed time capsule</div>
+      <div class="muted" style="margin-top:4px;">Opens ${esc(new Date(m.sealedUntil).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }))}</div></div></article>`;
   }
-  const photos = (m.photos || []).slice(0, 6);
-  const photosHTML = photos.length ? `<div class="photos">${photos.map((p) => `<img src="${esc(p)}" loading="lazy" alt="">`).join('')}</div>` : '';
-  const tagsHTML = (m.tags || []).length ? `<div class="tags">${m.tags.map((t) => `<span class="tag ${t.confirmed ? 'witnessed' : ''}">${t.confirmed ? '✓ ' : ''}${esc(t.label)}</span>`).join('')}</div>` : '';
+  const photos = m.photos || [];
+  const textOnly = photos.length === 0;
+  let media = '';
+  if (photos.length === 1) media = `<figure class="jhero">${mediaTag(photos[0])}${m.caption ? `<figcaption>${esc(m.caption)}</figcaption>` : ''}</figure>`;
+  else if (photos.length === 2) media = `<div class="jhero two"><div class="mat">${mediaTag(photos[0])}</div><div class="mat">${mediaTag(photos[1])}</div></div>`;
+  else if (photos.length >= 3) media = `<figure class="jhero">${mediaTag(photos[0])}</figure><div class="jmore">${photos.slice(1, 7).map((p) => `<div class="mat">${mediaTag(p)}</div>`).join('')}</div>`;
+  const showCaption = m.caption && photos.length !== 1;
+  const story = m.story ? (m.story.length > 460 ? m.story.slice(0, 460).trim() + '…' : m.story) : '';
   const loc = placeLabel(m);
-  const milestone = m.milestone && MILESTONE_ICON[m.milestone] ? `<span class="milestone" title="${esc(m.milestone)}">${MILESTONE_ICON[m.milestone]}</span>` : '';
-  return `<div class="moment-row ${side}"><div class="tabline"><div class="datetab">${esc(dateTabLabel(m))}</div></div>
-    <div class="card ${m.adopted ? 'adopted' : ''}" data-moment="${esc(m.id)}">
-      ${milestone || m.adopted ? `<div class="m-meta">${milestone}${m.adopted ? '<span class="tag" style="background:rgba(27,75,143,0.12);color:var(--blue-deep)">Added from a friend</span>' : ''}</div>` : ''}
-      ${m.title ? `<h3 class="m-title">${esc(m.title)}</h3>` : ''}
-      ${m.caption ? `<div class="m-caption">${esc(m.caption)}</div>` : ''}
-      ${m.story ? `<div class="m-story">${esc(m.story.length > 280 ? m.story.slice(0, 280) + '…' : m.story)}</div>` : ''}
-      ${photosHTML}${loc ? `<div class="m-loc">📍 ${esc(loc)}</div>` : ''}${tagsHTML}
-    </div></div>`;
+  const milestone = m.milestone && MILESTONE_ICON[m.milestone] ? `<div class="jmilestone">${MILESTONE_ICON[m.milestone]}</div>` : '';
+  const tags = m.tags || [];
+  const witnessed = tags.some((t) => t.confirmed);
+  const companionsHTML = tags.length
+    ? `<div class="jcompanions"><span class="lbl">${witnessed ? 'Witnessed by' : 'With'}</span>${tags.map((t) => `<span class="jcomp ${t.confirmed ? 'witnessed' : ''}">${t.confirmed ? '✦ ' : ''}${esc(t.label)}</span>`).join('')}</div>`
+    : (m.adopted ? `<div class="jcompanions"><span class="lbl">A shared moment</span></div>` : '');
+  return `<article class="jmoment ${cls} ${textOnly ? 'text-only' : ''}" data-moment="${esc(m.id)}">
+    ${milestone}
+    <div class="jdate">${esc(dateTabLabel(m))}</div>
+    ${m.title ? `<h3 class="jtitle">${esc(m.title)}</h3>` : ''}
+    ${showCaption ? `<div class="jcaption">${esc(m.caption)}</div>` : ''}
+    ${media}
+    ${story ? `<p class="jstory ${textOnly ? 'drop' : ''}">${esc(story)}</p>` : ''}
+    ${m.audioUrl ? `<div class="jvoice"><audio src="${esc(m.audioUrl)}" controls preload="none"></audio></div>` : ''}
+    ${loc ? `<div class="jmeta">📍 ${esc(loc)}</div>` : ''}
+    ${companionsHTML}
+  </article>`;
 }
 
 function timelineHTML(moments, owner) {
@@ -309,20 +347,19 @@ function timelineHTML(moments, owner) {
   for (const m of sorted) { if (!byYear.has(m.year)) byYear.set(m.year, []); byYear.get(m.year).push(m); }
   const business = owner?.accountType === 'business';
   let lastDecade = null;
-  let html = '<div class="timeline">';
+  // The central thread + a mark capping the top, so the journey begins IN the logo.
+  let html = '<div class="journey"><div class="spine">' + helixSvg() + '</div>' +
+    '<div class="cap"><img src="../brand/eternity-vault-mark.svg" alt=""></div>';
   for (const [year, list] of byYear) {
     const decade = Math.floor(year / 10) * 10;
     const isDecade = decade !== lastDecade;
     lastDecade = decade;
-    let label = String(year);
-    if (owner?.birthYear) {
-      const n = year - owner.birthYear;
-      label = business ? `Year ${n + 1} · ${year}` : n >= 0 ? `Age ${n} · ${year}` : String(year);
-    }
-    html += `<div class="era ${isDecade ? 'decade' : ''}">${isDecade ? `<div class="ghost">${decade}s</div>` : ''}<span class="plate">${esc(label)}</span></div>`;
+    let age = '';
+    if (owner?.birthYear) { const n = year - owner.birthYear; age = business ? `Year ${n + 1}` : n >= 0 ? `Age ${n}` : ''; }
+    html += `<div class="jchapter ${isDecade ? 'decade' : ''}" ${isDecade ? `data-decade="${decade}s"` : ''}><div class="yr">${year}</div>${age ? `<span class="age">${esc(age)}</span>` : ''}</div>`;
     for (const m of list) html += momentCardHTML(m);
   }
-  return html + '</div>';
+  return html + '<div class="cap"><img src="../brand/eternity-vault-mark.svg" alt=""></div></div>';
 }
 
 function attachMomentClicks() {
@@ -363,7 +400,7 @@ async function viewJourney() {
       ${monumentHTML(state.user, moments, circleCount, true)}
       ${!sealed ? `<div class="btn-row"><a class="btn" href="#/add">+ Add a moment</a><a class="btn ghost" href="#/profile/edit">Edit profile</a></div>` : ''}
       <div class="section-title">Your Journey</div>
-      ${moments.length ? `${viewChipsHTML('jv-chips')}<div id="jv-host" style="background:${bg};border-radius:16px;padding:14px 10px;"></div>`
+      ${moments.length ? `${viewChipsHTML('jv-chips')}<div id="jv-host"></div>`
         : `<div class="empty"><div class="big">🌱</div>Your journey is empty.<br>Add the first moment of your life's record.
            <div style="margin-top:18px;"><a class="btn" href="#/add">+ Add a moment</a></div></div>`}
       ${appFooter()}
@@ -400,7 +437,7 @@ async function viewPerson(handle) {
         <button class="btn danger sm" id="block-btn">Block</button>
       </div>
       <div class="section-title">${esc(u.name?.split(' ')[0] || 'Their')}'s Journey</div>
-      ${moments.length ? `${viewChipsHTML('pv-chips')}<div id="pv-host" style="background:${bgColor(u.journeyBg)};border-radius:16px;padding:14px 10px;"></div>` : '<div class="empty">No moments yet.</div>'}
+      ${moments.length ? `${viewChipsHTML('pv-chips')}<div id="pv-host"></div>` : '<div class="empty">No moments yet.</div>'}
       ${appFooter()}
     </div>`;
   if (moments.length) mountFilteredTimeline('pv-host', 'pv-chips', moments, u);

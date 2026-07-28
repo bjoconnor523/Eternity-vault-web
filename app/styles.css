@@ -245,78 +245,85 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 .stat .n { font-size: 1.6rem; font-weight: 700; color: var(--blue); font-family: var(--serif); }
 .stat .l { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
 
-/* ============================ Timeline =================================== */
-.era { position: relative; text-align: center; margin: 40px 0 22px; }
-.era .plate {
-  display: inline-block; background: var(--cream); border: 1px solid var(--line);
-  border-radius: 14px; padding: 7px 22px; font-family: var(--hand); font-size: 1.7rem;
-  color: var(--blue-deep); box-shadow: var(--shadow-sm); position: relative; z-index: 2;
+/* ==================== Journey — editorial memoir ======================== */
+/* Soft, muted signal colors: gentle blue = solo, gentle amber = companion. */
+:root {
+  --j-blue: #3A5A88; --j-blue-deep: #2C466B; --j-amber: #B8923F; --j-amber-deep: #9A7A31; --display: 'Cormorant Garamond', Georgia, serif;
 }
-.era.decade .plate { border-color: var(--gold); border-width: 2px; }
-.era .ghost {
-  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  font-family: var(--serif); font-weight: 700; font-size: 3.8rem; color: rgba(27, 75, 143, 0.07);
-  z-index: 1; pointer-events: none;
+.journey { max-width: 640px; margin: 0 auto; position: relative; }
+/* The central thread (white ribbon + coiling blue helix) runs the full height. */
+.spine { position: absolute; top: 0; bottom: 0; left: 50%; width: 14px; transform: translateX(-50%); z-index: 0; }
+.spine svg { display: block; width: 14px; height: 100%; }
+/* The journey begins and ends IN the mark, so the thread never dangles. */
+.cap { text-align: center; position: relative; z-index: 2; margin: 4px 0; }
+.cap img { width: 40px; height: 40px; background: var(--cream); border-radius: 50%; padding: 3px; box-shadow: 0 2px 10px rgba(27,75,143,0.12); }
+
+/* Year chapter — sits above the thread, which runs through behind it */
+.jchapter { text-align: center; margin: 60px 0 26px; position: relative; z-index: 1; }
+.jchapter:first-child { margin-top: 22px; }
+.jchapter .yr { font-family: var(--display); font-weight: 600; font-size: 4.2rem; line-height: 1; color: var(--j-blue); letter-spacing: 1px; position: relative; z-index: 1; }
+.jchapter .age { display: block; font-family: var(--hand); font-size: 1.5rem; color: var(--j-amber); margin-top: -2px; position: relative; z-index: 1; }
+.jchapter.decade::before { content: attr(data-decade); position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); font-family: var(--display); font-weight: 600; font-size: 8rem; color: rgba(27,75,143,0.05); letter-spacing: 6px; z-index: 0; pointer-events: none; white-space: nowrap; }
+
+/* Moment — soft tinted panel; color signals solo vs companion */
+.jmoment { position: relative; z-index: 1; border-radius: 20px; padding: 28px 30px 30px; margin: 40px 0; cursor: pointer; border: 1px solid transparent; transition: transform 0.1s ease, box-shadow 0.2s ease; }
+.jmoment:hover { transform: translateY(-2px); box-shadow: 0 16px 44px rgba(27,75,143,0.1); }
+.jmoment.solo { background: rgba(27,75,143,0.05); border-color: rgba(27,75,143,0.1); }
+.jmoment.companion { background: rgba(197,157,72,0.13); border-color: rgba(154,122,49,0.22); }
+/* A bead where each moment meets the thread, coloured by solo/companion. */
+.jmoment::before { content: ''; position: absolute; top: -26px; left: 50%; transform: translateX(-50%); width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--cream); z-index: 2; }
+.jmoment.solo::before { background: #3A5A88; box-shadow: 0 0 0 2px rgba(58,90,136,0.35); }
+.jmoment.companion::before { background: #C9A24E; box-shadow: 0 0 0 2px rgba(154,122,49,0.45); }
+.jmoment .jmilestone { font-size: 1.4rem; text-align: center; margin-bottom: 2px; }
+.jmoment .jdate { font-family: var(--hand); font-size: 1.4rem; text-align: center; margin-bottom: 4px; }
+.jmoment.solo .jdate { color: var(--j-blue); }
+.jmoment.companion .jdate { color: var(--j-amber-deep); }
+.jmoment .jtitle { font-family: var(--display); font-weight: 600; font-size: 2.2rem; line-height: 1.15; text-align: center; margin: 0 0 6px; color: var(--j-blue-deep); }
+.jmoment .jcaption { text-align: center; color: var(--muted); font-size: 1.12rem; font-style: italic; margin-bottom: 20px; }
+
+/* Hero media — natural aspect, matted like a print */
+.jhero { background: var(--paper); padding: 10px; border-radius: 6px; box-shadow: 0 14px 44px rgba(27,75,143,0.14); border: 1px solid rgba(0,0,0,0.04); margin: 0 0 20px; }
+.jhero img, .jhero video { width: 100%; height: auto; max-height: 72vh; object-fit: cover; display: block; border-radius: 3px; }
+.jhero figcaption { font-family: var(--hand); text-align: center; color: var(--muted); font-size: 1.1rem; padding-top: 8px; }
+.jhero.two { background: transparent; box-shadow: none; border: none; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.jhero.two .mat { background: var(--paper); padding: 8px; border-radius: 5px; box-shadow: 0 10px 30px rgba(27,75,143,0.12); }
+.jhero.two .mat img, .jhero.two .mat video { aspect-ratio: 1; }
+.jmore { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 20px; }
+.jmore .mat { background: var(--paper); padding: 6px; border-radius: 5px; box-shadow: 0 8px 20px rgba(27,75,143,0.1); }
+.jmore img, .jmore video { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; border-radius: 2px; }
+
+/* Story — book-like measure; drop-cap when text is the star */
+.jstory { font-size: 1.14rem; line-height: 1.85; color: var(--ink); max-width: 56ch; margin: 0 auto 14px; white-space: pre-wrap; }
+.jmoment.text-only .jstory { font-size: 1.24rem; }
+.jstory.drop::first-letter { font-family: var(--display); font-size: 3.4rem; font-weight: 600; float: left; line-height: 0.72; padding: 8px 10px 0 0; color: var(--j-amber-deep); }
+
+/* Voice note */
+.jvoice { max-width: 440px; margin: 6px auto 14px; }
+.jvoice audio { width: 100%; }
+.jmeta { text-align: center; color: var(--muted); font-size: 0.92rem; margin-top: 6px; }
+
+/* Companions ribbon */
+.jcompanions { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+.jcompanions .lbl { font-family: var(--hand); font-size: 1.2rem; color: var(--j-amber-deep); }
+.jcomp { background: rgba(197,157,72,0.18); color: var(--j-blue-deep); border: 1px solid rgba(154,122,49,0.3); padding: 3px 12px; border-radius: 999px; font-size: 0.9rem; }
+.jcomp.witnessed { background: rgba(197,157,72,0.34); font-weight: 600; }
+
+/* Sealed capsule */
+.jsealed { text-align: center; padding: 34px; border-radius: 20px; background: rgba(120,110,80,0.06); border: 1px dashed var(--j-amber-deep); }
+.jsealed .lock { font-size: 2rem; }
+.jsealed .st { font-family: var(--display); font-size: 1.5rem; color: var(--j-blue-deep); margin-top: 6px; }
+
+/* Filter chips coloured to match the signal */
+.viewchip[data-view="all"].active { background: var(--j-blue-deep); color: var(--cream); }
+.viewchip[data-view="solo"].active { background: #4E6E9E; color: #fff; }
+.viewchip[data-view="companions"].active { background: #D8B15E; color: #3a2f12; }
+
+@media (max-width: 560px) {
+  .jchapter .yr { font-size: 3.2rem; }
+  .jchapter.decade::before { font-size: 5.4rem; }
+  .jmoment { padding: 22px 18px; }
+  .jmoment .jtitle { font-size: 1.8rem; }
 }
-/* Two-sided spine: solo moments branch RIGHT, companion moments branch LEFT. */
-.timeline { position: relative; }
-.timeline::before {
-  content: ''; position: absolute; left: 50%; top: 6px; bottom: 6px; width: 2px; margin-left: -1px;
-  background: linear-gradient(180deg, var(--gold) 0%, rgba(255, 201, 60, 0.3) 100%);
-}
-.moment-row { position: relative; width: 50%; box-sizing: border-box; margin-bottom: 30px; }
-.moment-row.side-right { margin-left: 50%; padding-left: 30px; }
-.moment-row.side-left { padding-right: 30px; }
-/* gold bead where the branch meets the spine */
-.moment-row::before {
-  content: ''; position: absolute; top: 34px; width: 13px; height: 13px; border-radius: 50%;
-  background: var(--gold); border: 2px solid var(--cream); box-shadow: 0 0 0 2px var(--gold-deep); z-index: 2;
-}
-.moment-row.side-right::before { left: -6px; }
-.moment-row.side-left::before { right: -6px; }
-/* short connector from spine to card */
-.moment-row::after { content: ''; position: absolute; top: 40px; height: 2px; width: 30px; background: var(--gold); }
-.moment-row.side-right::after { left: 0; }
-.moment-row.side-left::after { right: 0; }
-.tabline { text-align: left; }
-.moment-row.side-left .tabline { text-align: right; }
-.datetab {
-  display: inline-block; background: var(--tab); color: #2a2620; font-family: var(--hand);
-  font-size: 1.25rem; line-height: 1; padding: 6px 14px 5px; border-radius: 10px 10px 0 0;
-  border: 1px solid var(--line); border-bottom: none; margin: 0 10px;
-}
-/* On phones, two half-width columns are unreadable — collapse to one column. */
-@media (max-width: 720px) {
-  .timeline::before { left: 7px; margin-left: 0; }
-  .moment-row, .moment-row.side-right, .moment-row.side-left { width: 100%; margin-left: 0; padding-left: 30px; padding-right: 0; }
-  .moment-row .tabline, .moment-row.side-left .tabline { text-align: left; }
-  .moment-row::before, .moment-row.side-left::before, .moment-row.side-right::before { left: 1px; right: auto; }
-  .moment-row::after, .moment-row.side-left::after, .moment-row.side-right::after { left: 9px; right: auto; width: 21px; }
-}
-.card {
-  background: var(--blue); color: var(--cream); border-radius: 16px; padding: 18px 20px;
-  box-shadow: var(--shadow); cursor: pointer; transition: transform 0.09s ease, box-shadow 0.15s ease;
-}
-.card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
-.card.adopted { background: var(--gold); color: var(--blue-deep); }
-.card .m-title { font-size: 1.3rem; font-weight: 600; margin: 0 0 4px; }
-.card .m-caption { opacity: 0.94; font-size: 1rem; }
-.card .m-story { margin-top: 9px; opacity: 0.9; font-size: 0.96rem; white-space: pre-wrap; }
-.card .m-loc { font-size: 0.86rem; opacity: 0.82; margin-top: 10px; }
-.card .m-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
-.card .milestone { font-size: 1.1rem; }
-.photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; margin-top: 13px; }
-.photos img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--photo-radius, 9px); border: 3px solid var(--cream); background: var(--cream-deep); }
-.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
-.tag { font-size: 0.82rem; padding: 3px 11px; border-radius: 999px; background: rgba(253, 248, 234, 0.22); color: var(--cream); }
-.card.adopted .tag { background: rgba(27, 75, 143, 0.14); color: var(--blue-deep); }
-.tag.witnessed { background: var(--gold); color: var(--blue-deep); font-weight: 700; }
-.card.adopted .tag.witnessed { background: var(--blue); color: var(--cream); }
-.sealed-card {
-  background: repeating-linear-gradient(45deg, #ece3c6, #ece3c6 14px, #e6dcbb 14px, #e6dcbb 28px);
-  color: var(--blue-deep); border-radius: 16px; padding: 26px; text-align: center; border: 1px dashed var(--gold-deep);
-}
-.sealed-card .lock { font-size: 2rem; }
 
 /* ============================ People rows =============================== */
 .person {
