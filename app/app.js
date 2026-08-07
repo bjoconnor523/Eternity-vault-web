@@ -478,7 +478,7 @@ function attachMomentClicks() {
 // whitespace-separated term must appear (AND), so "maine 2009" narrows.
 const momentMatches = (m, q) => {
   if (!q) return true;
-  const hay = [m.title, m.caption, m.story, placeLabel(m), m.location, String(m.year || ''), ...((m.tags || []).map((t) => t.label))]
+  const hay = [m.title, m.caption, m.story, placeLabel(m), m.location, String(m.year || ''), ...((m.tags || []).map((t) => t.label)), ...(m.topics || [])]
     .filter(Boolean).join(' ').toLowerCase();
   return q.toLowerCase().split(/\s+/).filter(Boolean).every((term) => hay.includes(term));
 };
@@ -701,10 +701,23 @@ async function viewWorld() {
     $('#results').innerHTML = '<div class="spinner"></div>';
     let people = (await api.searchOthers(state.user.id, q)).filter((u) => !state.blocked.has(u.id));
     if (worldFilter !== 'all') people = people.filter((u) => (u.accountType || 'personal') === worldFilter);
-    $('#results').innerHTML = people.length
-      ? `<div class="section-title">${q ? 'Results' : 'Recently joined'}</div>` + people.map(personRowHTML).join('')
+    // Topic search across everyone's moments (private tags, never displayed on
+    // the moment — only surfaced here as discovery).
+    const topicMoments = q.trim() ? await api.searchMomentsByTopic(q, state.blocked) : [];
+    const topicHTML = topicMoments.length
+      ? `<div class="section-title">Moments tagged “${esc(q.trim())}”</div>` +
+        topicMoments.slice(0, 12).map((m) => `<div class="person" data-moment="${esc(m.id)}">
+          <div class="pfp">🔖</div>
+          <div class="who"><div class="nm">${esc(m.title || m.caption || 'A moment')}</div><div class="hd">${esc(String(m.year || ''))}</div></div>
+          <div style="color:var(--blue);font-size:1.4rem;">›</div></div>`).join('')
+      : '';
+    const peopleHTML = people.length
+      ? `<div class="section-title">${q ? 'People' : 'Recently joined'}</div>` + people.map(personRowHTML).join('')
+      : topicMoments.length ? ''
       : '<div class="empty">No one found. Try another name.</div>';
+    $('#results').innerHTML = topicHTML + peopleHTML;
     $('#results').querySelectorAll('[data-handle]').forEach((c) => (c.onclick = () => nav(`#/u/${c.getAttribute('data-handle')}`)));
+    $('#results').querySelectorAll('[data-moment]').forEach((c) => (c.onclick = () => nav(`#/moment/${c.getAttribute('data-moment')}`)));
   };
   root().querySelectorAll('#world-filter .viewchip').forEach((c) => (c.onclick = () => {
     worldFilter = c.getAttribute('data-wf');
@@ -775,19 +788,26 @@ async function viewNotifications() {
     if (n.type === 'contribution') return `${who} added their side to “${esc(n.memoryTitle || 'a moment')}”`;
     if (n.type === 'circle') return `${who} added you to their Circle`;
     if (n.type === 'memorial') return `${esc(n.body || 'A memorial notice')}`;
+    if (n.type === 'keeper_request' || n.type === 'keeper_confirmed' || n.type === 'keeper_declined')
+      return `${esc(n.body || who + ' — a Keeper update')}`;
     return `${who} sent you a notification`;
   };
   root().innerHTML = `
     <div class="wrap">
       <div class="section-title">Notifications</div>
-      ${notes.length ? notes.map((n) => `<div class="notif ${n.read ? '' : 'unread'}" ${n.memoryId ? `data-moment="${esc(n.memoryId)}"` : n.fromHandle ? `data-handle="${esc(n.fromHandle)}"` : ''} style="cursor:${n.memoryId || n.fromHandle ? 'pointer' : 'default'}">
+      ${notes.length ? notes.map((n) => {
+        const keeper = (n.type || '').startsWith('keeper_');
+        const attr = keeper ? 'data-nav="#/settings"' : n.memoryId ? `data-moment="${esc(n.memoryId)}"` : n.fromHandle ? `data-handle="${esc(n.fromHandle)}"` : '';
+        return `<div class="notif ${n.read ? '' : 'unread'}" ${attr} style="cursor:${attr ? 'pointer' : 'default'}">
           <div class="notif-av">${avatarImg({ avatarUri: n.fromAvatarUri, name: n.fromName || '?' }, 'na-img')}</div>
-          <div class="notif-body"><div>${line(n)}</div><div class="muted" style="font-size:0.8rem;margin-top:3px;">${timeAgo(n.createdAt)}</div></div></div>`).join('')
+          <div class="notif-body"><div>${line(n)}</div><div class="muted" style="font-size:0.8rem;margin-top:3px;">${timeAgo(n.createdAt)}</div></div></div>`;
+      }).join('')
         : '<div class="empty"><div class="big">🔔</div>No notifications yet.</div>'}
       ${appFooter()}
     </div>`;
   root().querySelectorAll('[data-moment]').forEach((c) => (c.onclick = () => nav(`#/moment/${c.getAttribute('data-moment')}`)));
   root().querySelectorAll('[data-handle]').forEach((c) => (c.onclick = () => nav(`#/u/${c.getAttribute('data-handle')}`)));
+  root().querySelectorAll('[data-nav]').forEach((c) => (c.onclick = () => nav(c.getAttribute('data-nav'))));
   api.markNotificationsRead(state.user.id).catch(() => {});
 }
 
@@ -941,6 +961,10 @@ async function viewMomentForm(existingId) {
         <div class="field"><label>People who were there</label><input name="tags" value="${m ? esc((m.tags || []).map((t) => (t.handle ? '@' + t.handle : t.label)).join(', ')) : ''}" placeholder="Mom, @davidk, the whole crew">
           <div class="hint">Separate with commas. Use @handle to link a real member.</div>
           <div id="saved-comp" class="saved-comp"></div></div>
+        <div class="field"><label>Private topics <span class="muted">— just for you; never shown on the moment</span></label>
+          <input name="topics" value="${m ? esc((m.topics || []).join(', ')) : ''}" placeholder="music, career, travel">
+          <div class="hint">Separate with commas. They make this moment findable in your search — and by topic across the World.</div>
+          <div id="saved-topics" class="saved-comp"></div></div>
         <div class="field"><label>Photos</label><input type="file" id="photo-input" accept="image/*,video/*" multiple><div class="photo-preview" id="preview"></div></div>
         <div class="field"><label>Or pull from your shelf</label><div id="shelf-strip" class="shelf-strip"><span class="muted" style="font-size:0.9rem;">Loading…</span></div>
           <div class="hint"><a href="#/import">Manage your import shelf →</a></div></div>
@@ -986,6 +1010,22 @@ async function viewMomentForm(existingId) {
       const name = b.getAttribute('data-name');
       if (has(name)) return;
       tagsInput.value = tagsInput.value.trim() ? `${tagsInput.value.replace(/,\s*$/, '')}, ${name}` : name;
+    }));
+  })();
+
+  // Your previously-used topics — tap to reuse the same spelling.
+  (async () => {
+    const mine = await api.getMyTopics(state.user.id).catch(() => []);
+    const wrap = $('#saved-topics');
+    if (!wrap || !mine.length) return;
+    const inp = $('#m-form input[name=topics]');
+    const has = (t) => inp.value.split(',').map((s) => s.trim().toLowerCase()).includes(t.toLowerCase());
+    wrap.innerHTML = '<span class="saved-comp-lbl">Your topics:</span>' +
+      mine.map((t) => `<button type="button" class="saved-chip" data-t="${esc(t)}">#${esc(t)}</button>`).join('');
+    wrap.querySelectorAll('.saved-chip').forEach((b) => (b.onclick = () => {
+      const t = b.getAttribute('data-t');
+      if (has(t)) return;
+      inp.value = inp.value.trim() ? `${inp.value.replace(/,\s*$/, '')}, ${t}` : t;
     }));
   })();
 
@@ -1039,12 +1079,13 @@ async function viewMomentForm(existingId) {
       // Remember the place so it's reused consistently next time.
       if (place) api.addSavedPlace(state.user.id, { kind: 'city', label: [place.city, place.region].filter(Boolean).join(', '), city: place.city, region: place.region, country: place.country }).catch(() => {});
       else if (customPlace && locationText) api.addSavedPlace(state.user.id, { kind: 'custom', label: locationText }).catch(() => {});
+      const topics = (f.get('topics') || '').split(',').map((s) => s.trim().replace(/^#/, '')).filter(Boolean);
       const payload = {
         year: +f.get('year'), month: f.get('month') ? +f.get('month') : null, day: f.get('day') ? +f.get('day') : null,
         title: f.get('title'), caption: f.get('caption'), story: f.get('story'),
         location: locationText, place, milestone: f.get('milestone') || null,
         sealedUntil: f.get('sealedUntil') || null,
-        photos: [...keptPhotos, ...pendingFiles], tags,
+        photos: [...keptPhotos, ...pendingFiles], tags, topics,
       };
       if (existingId) {
         await api.updateMemory(state.user, existingId, payload, m.tags);
@@ -1271,11 +1312,18 @@ async function viewSettings() {
   renderTopbar('settings');
   setLoading();
   const u = state.user;
-  // Circle members for the Keeper picker.
+  // Circle members, and the Inner Circle (those tagged in your moments) — the
+  // Keeper is named from the Inner Circle only.
   const pairs = await api.fetchCircleOf(u.id);
   const ids = [...new Set(pairs.map((p) => (p.a === u.id ? p.b : p.a)))];
   const members = [];
   for (const id of ids) { const m = await api.fetchUserById(id); if (m) members.push(m); }
+  const myMoments = await api.getMomentsOf(u.id);
+  const taggedIds = new Set();
+  for (const mm of myMoments) for (const t of mm.tags || []) if (t.userId) taggedIds.add(t.userId);
+  const innerMembers = members.filter((m) => taggedIds.has(m.id));
+  let keeperReqs = await api.getKeeperRequests(u.id);
+  let keeperChanging = false;
   const section = (t) => `<div class="section-title" style="font-size:1.15rem;">${t}</div>`;
   root().innerHTML = `
     <div class="wrap">
@@ -1324,12 +1372,8 @@ async function viewSettings() {
       </div>
 
       ${section('Legacy — your Keeper')}
-      <div class="panel"><p class="muted" style="margin-top:0;">Name the one person you trust to tell us when you're gone. They can never edit or add to your Vault — only close it, and share it. Choose from your Circle.</p>
-        <div class="field"><select id="keeper">
-          <option value="">No Keeper chosen</option>
-          ${members.map((m) => `<option value="${m.id}" ${u.keeperId === m.id ? 'selected' : ''}>${esc(m.name)} (@${esc(m.handle)})</option>`).join('')}
-        </select></div>
-        ${members.length === 0 ? '<div class="hint">Add people to your Circle first, then you can name one as your Keeper.</div>' : ''}
+      <div class="panel"><p class="muted" style="margin-top:0;">Name the one person you trust to tell us when you're gone. They can never edit or add to your Vault — only close it, and share it. They must accept before they become your Keeper. Choose from your Inner Circle.</p>
+        <div id="keeper-block"></div>
       </div>
 
       ${section('Legal')}
@@ -1379,17 +1423,61 @@ async function viewSettings() {
   }));
   $('#dl-html').onclick = () => downloadJourney('html');
   $('#dl-json').onclick = () => downloadJourney('json');
-  $('#keeper').onchange = async (e) => {
-    const v = e.target.value || null;
-    try { await api.updateProfile(u.id, { keeperId: v }); state.user.keeperId = v; msg('<div class="success">Keeper updated.</div>'); }
-    catch (err) { msg(`<div class="error">${esc(err.message)}</div>`); }
+  const refreshKeeper = async () => { keeperReqs = await api.getKeeperRequests(u.id); renderKeeper(); };
+  const renderKeeper = () => {
+    const block = $('#keeper-block'); if (!block) return;
+    const confirmed = members.find((m) => m.id === u.keeperId);
+    const out = keeperReqs.outgoing;
+    const inc = keeperReqs.incoming || [];
+    const showPicker = keeperChanging || (!confirmed && !out);
+    let html = '';
+    if (confirmed && !keeperChanging) {
+      html += `<div class="settings-row"><div class="lbl"><div class="t">${esc(confirmed.name)}</div><div class="d">@${esc(confirmed.handle)} · your Keeper</div></div>
+        <button class="btn ghost sm" id="k-change">Change</button> <button class="btn danger sm" id="k-remove">Remove</button></div>`;
+    } else if (out && !keeperChanging) {
+      html += `<div class="settings-row"><div class="lbl"><div class="t">${esc(out.name || 'Someone')}</div><div class="d">Waiting for them to accept — they become your Keeper only when they do.</div></div>
+        <button class="btn danger sm" id="k-cancel">Cancel request</button></div>`;
+    }
+    if (showPicker) {
+      if (!innerMembers.length) {
+        html += '<div class="hint">Your Inner Circle is empty. Tag the people who were there in your moments first, then name one as your Keeper.</div>';
+      } else {
+        html += `<div class="field"><label>Choose from your Inner Circle</label><select id="k-pick"><option value="">Choose someone…</option>${innerMembers.map((m) => `<option value="${m.id}">${esc(m.name)} (@${esc(m.handle)})</option>`).join('')}</select></div>
+          <button class="btn sm" id="k-send">Send request</button>${(confirmed || out) ? ' <button class="btn ghost sm" id="k-cancelchange">Cancel</button>' : ''}`;
+      }
+    }
+    if (inc.length) {
+      html += '<div class="section-title" style="font-size:1rem;margin-top:16px;">Asked to be a Keeper</div>';
+      for (const r of inc) {
+        html += `<div class="settings-row"><div class="lbl"><div class="t">${esc(r.name || 'Someone')}</div><div class="d">asked you to be their Keeper — the one person who can report their passing. Only accept if you're willing.</div></div>
+          <button class="btn sm" data-accept="${esc(r.id)}" data-subj="${esc(r.subjectId)}">Accept</button> <button class="btn ghost sm" data-decline="${esc(r.id)}" data-subj="${esc(r.subjectId)}">Decline</button></div>`;
+      }
+    }
+    block.innerHTML = html;
+    if ($('#k-change', block)) $('#k-change', block).onclick = () => { keeperChanging = true; renderKeeper(); };
+    if ($('#k-cancelchange', block)) $('#k-cancelchange', block).onclick = () => { keeperChanging = false; renderKeeper(); };
+    if ($('#k-remove', block)) $('#k-remove', block).onclick = async () => {
+      try { await api.removeKeeper(u); u.keeperId = null; state.user.keeperId = null; keeperChanging = false; await refreshKeeper(); }
+      catch (err) { msg(`<div class="error">${esc(err.message)}</div>`); }
+    };
+    if ($('#k-cancel', block)) $('#k-cancel', block).onclick = async () => {
+      try { await api.cancelKeeperRequest(out.id); await refreshKeeper(); } catch (err) { msg(`<div class="error">${esc(err.message)}</div>`); }
+    };
+    if ($('#k-send', block)) $('#k-send', block).onclick = async () => {
+      const v = $('#k-pick', block).value; if (!v) return;
+      try { await api.requestKeeper(u, v); keeperChanging = false; await refreshKeeper(); msg('<div class="success">Request sent — they become your Keeper once they accept.</div>'); }
+      catch (err) { msg(`<div class="error">${esc(err.message)}</div>`); }
+    };
+    block.querySelectorAll('[data-accept]').forEach((b) => (b.onclick = async () => {
+      try { await api.confirmKeeperRequest(u, b.getAttribute('data-accept'), b.getAttribute('data-subj')); await refreshKeeper(); } catch (err) { msg(`<div class="error">${esc(err.message)}</div>`); }
+    }));
+    block.querySelectorAll('[data-decline]').forEach((b) => (b.onclick = async () => {
+      try { await api.declineKeeperRequest(u, b.getAttribute('data-decline'), b.getAttribute('data-subj')); await refreshKeeper(); } catch (err) { msg(`<div class="error">${esc(err.message)}</div>`); }
+    }));
   };
+  renderKeeper();
   $('#logout').onclick = async () => { await api.logOut(); state.user = null; state.blocked = new Set(); nav('#/login'); route(); };
-  $('#del-account').onclick = async () => {
-    if (!confirm('Permanently delete your account and everything in it? This cannot be undone.')) return;
-    if (!confirm('Are you absolutely sure? There is no way to recover your journey after this.')) return;
-    try { await api.deleteAccount(); state.user = null; nav('#/login'); route(); } catch (err) { msg(`<div class="error">${esc(err.message)}</div>`); }
-  };
+  $('#del-account').onclick = () => openDeleteFlow();
 }
 
 // ---- Journey export --------------------------------------------------------
@@ -1820,6 +1908,79 @@ function openReport({ reportedUserId = null, momentId = null, commentId = null, 
       setTimeout(close, 1400);
     } catch (err) { $('#rep-msg', back).innerHTML = `<div class="error">${esc(err.message)}</div>`; btn.disabled = false; btn.textContent = 'Send report'; }
   };
+}
+
+const DELETE_REASONS = [
+  'Just taking a break',
+  'Privacy concerns',
+  "I didn't find it useful",
+  'Too complicated to use',
+  'I made a duplicate account',
+  'Something upset me',
+  'Other',
+];
+
+// A deliberate three-step account deletion with a required reason.
+function openDeleteFlow() {
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  let reason = '';
+  let note = '';
+  const close = () => back.remove();
+  const render = (step) => {
+    if (step === 1) {
+      back.innerHTML = `<div class="modal">
+        <h2 style="color:var(--danger)">Delete your account?</h2>
+        <p>This permanently deletes your profile, moments, photos, voice notes, tags, and Circle connections. It cannot be undone.</p>
+        <div class="muted" style="text-transform:uppercase;letter-spacing:.5px;font-size:.8rem;margin-top:12px;">Step 1 of 3</div>
+        <div class="btn-row" style="justify-content:flex-end;">
+          <button type="button" class="btn ghost sm" id="d-cancel">Keep my account</button>
+          <button type="button" class="btn sm" id="d-next">Continue</button>
+        </div></div>`;
+      $('#d-cancel', back).onclick = close;
+      $('#d-next', back).onclick = () => render(2);
+    } else if (step === 2) {
+      back.innerHTML = `<div class="modal">
+        <h2>Before you go</h2>
+        <p>Why are you leaving? This helps us — and it's required.</p>
+        <div id="d-reasons">${DELETE_REASONS.map((r) => `<label class="d-reason"><input type="radio" name="dreason" value="${esc(r)}" ${reason === r ? 'checked' : ''}> ${esc(r)}</label>`).join('')}</div>
+        <div class="field" style="margin-top:10px;"><textarea id="d-note" placeholder="Anything else? (optional)">${esc(note)}</textarea></div>
+        <div class="btn-row" style="justify-content:flex-end;">
+          <button type="button" class="btn ghost sm" id="d-back">Back</button>
+          <button type="button" class="btn sm" id="d-next" disabled>Continue</button>
+        </div></div>`;
+      const nextBtn = $('#d-next', back);
+      nextBtn.disabled = !reason;
+      back.querySelectorAll('input[name=dreason]').forEach((r) => (r.onchange = () => { reason = r.value; nextBtn.disabled = false; }));
+      $('#d-note', back).oninput = (e) => { note = e.target.value; };
+      $('#d-back', back).onclick = () => render(1);
+      nextBtn.onclick = () => { if (reason) render(3); };
+    } else {
+      back.innerHTML = `<div class="modal">
+        <h2 style="color:var(--danger)">Last check</h2>
+        <p>This erases everything, forever. There is no undo, and no way to recover your journey afterward.</p>
+        <div class="muted" style="text-transform:uppercase;letter-spacing:.5px;font-size:.8rem;margin-top:12px;">Step 3 of 3</div>
+        <div id="d-msg"></div>
+        <div class="btn-row" style="justify-content:flex-end;">
+          <button type="button" class="btn ghost sm" id="d-cancel">Cancel</button>
+          <button type="button" class="btn danger sm" id="d-final">Permanently delete</button>
+        </div></div>`;
+      $('#d-cancel', back).onclick = close;
+      $('#d-final', back).onclick = async () => {
+        const btn = $('#d-final', back); btn.disabled = true; btn.textContent = 'Deleting…';
+        try {
+          await api.deleteAccount({ category: reason, text: note, accountType: state.user?.accountType || null });
+          state.user = null; state.blocked = new Set(); nav('#/login'); route(); close();
+        } catch (err) {
+          $('#d-msg', back).innerHTML = `<div class="error">${esc(err.message)}</div>`;
+          btn.disabled = false; btn.textContent = 'Permanently delete';
+        }
+      };
+    }
+  };
+  document.body.appendChild(back);
+  back.onclick = (e) => { if (e.target === back) close(); };
+  render(1);
 }
 
 // ---- Router ----------------------------------------------------------------

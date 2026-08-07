@@ -241,8 +241,28 @@ const momentFromRow = (row) => ({
     userId: t.tagged_user_id,
     confirmed: !!t.confirmed,
   })),
+  topics: [], // private topic tags — searchable, never displayed
   createdAt: row.created_at,
 });
+
+// Attach each moment's private topic tags in one query.
+const attachTopics = async (moments) => {
+  const ids = moments.map((m) => m.id);
+  if (!ids.length) return moments;
+  const { data } = await supabase.from('moment_topics').select('moment_id, topic').in('moment_id', ids);
+  const byMoment = new Map();
+  for (const r of data || []) {
+    if (!byMoment.has(r.moment_id)) byMoment.set(r.moment_id, []);
+    byMoment.get(r.moment_id).push(r.topic);
+  }
+  return moments.map((m) => ({ ...m, topics: byMoment.get(m.id) || [] }));
+};
+
+const insertTopics = async (momentId, ownerId, topics) => {
+  const clean = [...new Set((topics || []).map((t) => (t || '').trim()).filter(Boolean))];
+  if (!clean.length) return;
+  await supabase.from('moment_topics').insert(clean.map((topic) => ({ moment_id: momentId, owner_id: ownerId, topic })));
+};
 
 // Chronological: year, then month, then day, then created_at.
 const byChrono = (a, b) =>
@@ -455,13 +475,32 @@ export const getMomentsOf = async (userId) => {
     out.push(...(data || []).map(momentFromRow));
     if ((data?.length || 0) < MOMENTS_PAGE) break;
   }
-  return hydrateMoments(out.sort(byChrono));
+  return hydrateMoments(await attachTopics(out.sort(byChrono)));
 };
 
 export const getMomentById = async (id) => {
   const { data, error } = await supabase.from('moments_feed').select('*').eq('id', id).maybeSingle();
   if (error || !data) return null;
-  return (await hydrateMoments([momentFromRow(data)]))[0];
+  return (await hydrateMoments(await attachTopics([momentFromRow(data)])))[0];
+};
+
+// The distinct topics this user has used, for add-moment suggestions.
+export const getMyTopics = async (userId) => {
+  const { data } = await supabase.from('moment_topics').select('topic').eq('owner_id', userId);
+  return [...new Set((data || []).map((r) => r.topic))].sort((a, b) => a.localeCompare(b));
+};
+
+// Every moment across ALL journeys whose topic matches (via moments_feed, so
+// sealed capsules stay masked). Returns moments carrying ownerId.
+export const searchMomentsByTopic = async (query, blocked = new Set()) => {
+  const q = (query || '').trim();
+  if (!q) return [];
+  const { data: hits } = await supabase.from('moment_topics').select('moment_id').ilike('topic', `%${q}%`).limit(200);
+  const ids = [...new Set((hits || []).map((h) => h.moment_id))];
+  if (!ids.length) return [];
+  const { data: rows } = await supabase.from('moments_feed').select('*').in('id', ids).limit(60);
+  const moments = (rows || []).map(momentFromRow).filter((m) => !blocked.has(m.ownerId));
+  return hydrateMoments(await attachTopics(moments));
 };
 
 const normalizeTag = (t) =>
@@ -588,6 +627,7 @@ export const addMemory = async (self, memory) => {
     .single();
   if (error || !row) throw new Error('Could not save the moment.');
   await insertTags(row.id, tags);
+  await insertTopics(row.id, self.id, memory.topics);
   await notifyNewTags(self, tags, [], { id: row.id, title: row.title, year: row.year });
   return row;
 };
@@ -614,6 +654,10 @@ export const updateMemory = async (self, id, patch, prevTags) => {
   if (Object.keys(cols).length) {
     const { error } = await supabase.from('moments').update(cols).eq('id', id);
     if (error) throw new Error('Could not update the moment.');
+  }
+  if ('topics' in patch) {
+    await supabase.from('moment_topics').delete().eq('moment_id', id);
+    await insertTopics(id, self.id, patch.topics);
   }
   if (patch.tags) {
     const prevByUser = {};
@@ -820,6 +864,50 @@ export const pushNotification = async (self, toUserId, notif) => {
   });
 };
 
+// ---- Keeper (mutual handshake) ---------------------------------------------
+// Naming a Keeper only SENDS a request; keeper_id is set server-side once the
+// named person accepts (confirm_keeper_request).
+export const requestKeeper = async (self, keeperId) => {
+  const { data: open } = await supabase.from('keeper_requests').select('id').eq('subject_id', self.id).eq('status', 'pending');
+  for (const r of open || []) await supabase.rpc('cancel_keeper_request', { req_id: r.id });
+  const { error } = await supabase.from('keeper_requests').insert({ subject_id: self.id, keeper_id: keeperId });
+  if (error) throw new Error('Could not send the request.');
+  await pushNotification(self, keeperId, { type: 'keeper_request', body: `${self.name} asked you to be their Keeper.` });
+};
+
+export const getKeeperRequests = async (userId) => {
+  const { data } = await supabase.from('keeper_requests').select('*').eq('status', 'pending');
+  const rows = data || [];
+  const who = async (id) => { const u = await fetchUserById(id); return u ? { name: u.name, handle: u.handle } : {}; };
+  const incoming = [];
+  for (const r of rows.filter((x) => x.keeper_id === userId)) incoming.push({ id: r.id, subjectId: r.subject_id, ...(await who(r.subject_id)) });
+  const out = rows.find((x) => x.subject_id === userId);
+  const outgoing = out ? { id: out.id, keeperId: out.keeper_id, ...(await who(out.keeper_id)) } : null;
+  return { incoming, outgoing };
+};
+
+export const confirmKeeperRequest = async (self, reqId, subjectId) => {
+  const { error } = await supabase.rpc('confirm_keeper_request', { req_id: reqId });
+  if (error) throw new Error(error.message || 'Could not confirm.');
+  await pushNotification(self, subjectId, { type: 'keeper_confirmed', body: `${self.name} accepted — they are now your Keeper.` });
+};
+
+export const declineKeeperRequest = async (self, reqId, subjectId) => {
+  const { error } = await supabase.rpc('decline_keeper_request', { req_id: reqId });
+  if (error) throw new Error(error.message || 'Could not decline.');
+  await pushNotification(self, subjectId, { type: 'keeper_declined', body: `${self.name} declined being your Keeper.` });
+};
+
+export const cancelKeeperRequest = async (reqId) => {
+  await supabase.rpc('cancel_keeper_request', { req_id: reqId });
+};
+
+export const removeKeeper = async (self) => {
+  const { data: open } = await supabase.from('keeper_requests').select('id').eq('subject_id', self.id).eq('status', 'pending');
+  for (const r of open || []) await supabase.rpc('cancel_keeper_request', { req_id: r.id });
+  await updateProfile(self.id, { keeperId: null });
+};
+
 // ---- Safety: blocks + reports --------------------------------------------
 export const fetchBlockedIds = async (userId) => {
   const { data } = await supabase
@@ -868,7 +956,17 @@ export const updatePassword = async (newPassword) => {
   if (error) throw new Error(error.message);
 };
 
-export const deleteAccount = async () => {
+export const deleteAccount = async (feedback) => {
+  // Record why (no PII) before the account is gone — best-effort.
+  if (feedback && (feedback.category || feedback.text)) {
+    try {
+      await supabase.from('deletion_feedback').insert({
+        reason_category: feedback.category || null,
+        reason_text: (feedback.text || '').trim() || null,
+        account_type: feedback.accountType || null,
+      });
+    } catch (e) { /* never block the deletion the user asked for */ }
+  }
   const { error } = await supabase.functions.invoke('delete-account');
   if (error) throw new Error('Could not delete your account. Please try again.');
   await supabase.auth.signOut();
