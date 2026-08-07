@@ -4,7 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Eternity Vault — proof you were here</title>
-  <meta name="description" content="A life, recorded in your own words, pictures and voice — witnessed by the people who were there, and kept forever. Coming soon." />
+  <meta name="description" content="Eternity Vault is a life-story app: record a whole life in your own words, pictures and voice — witnessed by the people who were there, and kept forever. Coming soon to iOS and Android." />
+  <link rel="canonical" href="https://eternity-vault.com/" />
 
   <!-- Social share preview -->
   <meta property="og:title" content="Eternity Vault" />
@@ -25,6 +26,45 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Caveat:wght@500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
+
+  <!-- Structured data: tells Google & AI assistants what Eternity Vault is -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://eternity-vault.com/#organization",
+        "name": "Eternity Vault",
+        "legalName": "Eternity Vault LLC",
+        "url": "https://eternity-vault.com/",
+        "logo": "https://eternity-vault.com/brand/eternity-vault-mark.png",
+        "image": "https://eternity-vault.com/brand/og-image.png",
+        "email": "brandon@eternity-vault.com",
+        "slogan": "proof you were here",
+        "description": "Eternity Vault is a life-story app that lets you record a whole life in your own words, pictures and voice — witnessed by the people who were there, and kept forever."
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://eternity-vault.com/#website",
+        "url": "https://eternity-vault.com/",
+        "name": "Eternity Vault",
+        "publisher": { "@id": "https://eternity-vault.com/#organization" },
+        "description": "The official site of Eternity Vault — a life, recorded in your own words, pictures and voice, and kept forever."
+      },
+      {
+        "@type": "MobileApplication",
+        "name": "Eternity Vault",
+        "applicationCategory": "LifestyleApplication",
+        "operatingSystem": "iOS, Android",
+        "url": "https://eternity-vault.com/",
+        "publisher": { "@id": "https://eternity-vault.com/#organization" },
+        "description": "Record a whole life as a chronological timeline of memories — photos, captions, stories and voice — built with the people who were there, and kept forever.",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
   <div class="page">

@@ -172,6 +172,7 @@ const ICONS = {
   bell: '<path d="M6.5 9.5a5.5 5.5 0 0 1 11 0c0 4.5 1.8 5.5 1.8 5.5H4.7s1.8-1 1.8-5.5Z"/><path d="M10 19a2 2 0 0 0 4 0"/>',
   user: '<circle cx="12" cy="8" r="3.5"/><path d="M5.5 19.5a6.5 6.5 0 0 1 13 0"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
 };
 const icon = (name, size = 20) => `<svg class="ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 
@@ -362,7 +363,11 @@ function monumentHTML(u, moments, circleCount, isSelf) {
   const wheel = wheelSvg(u);
   return `
     <div class="monument">
-      <div class="monument-photo">${photoInner}</div>
+      <div class="monument-top">
+        <div class="monument-photo">${photoInner}</div>
+        ${wheel ? `<div class="wheel-wrap">${wheel}</div>` : ''}
+      </div>
+      ${wheel && isSelf ? '<div style="text-align:center;margin:-8px 0 6px;"><a href="#/profile/edit" style="font-size:0.85rem;color:var(--muted);">Customize your wheel &amp; photos →</a></div>' : ''}
       <h1>${esc(u.name || 'Unnamed')}</h1>
       <div class="handle">@${esc(u.handle || '')}</div>
       <div>${business ? '<span class="chip">Business</span>' : ''}${sealed ? '<span class="chip sealed">✦ Kept as they left it</span>' : ''}</div>
@@ -375,7 +380,6 @@ function monumentHTML(u, moments, circleCount, isSelf) {
         <div class="stat"><div class="n">${years}</div><div class="l">Years</div></div>
         <div class="stat"><div class="n">${circleCount}</div><div class="l">Circle</div></div>
       </div>
-      ${wheel ? `<div class="wheel-wrap">${wheel}${isSelf ? '<div style="text-align:center;margin-top:8px;"><a href="#/profile/edit" style="font-size:0.85rem;color:var(--muted);">Customize your wheel &amp; photos →</a></div>' : ''}</div>` : ''}
     </div>`;
 }
 
@@ -419,9 +423,8 @@ function momentCardHTML(m) {
   const photos = m.photos || [];
   const textOnly = photos.length === 0;
   let media = '';
-  if (photos.length === 1) media = `<figure class="jhero">${mediaTag(photos[0])}${m.caption ? `<figcaption>${esc(m.caption)}</figcaption>` : ''}</figure>`;
-  else if (photos.length === 2) media = `<div class="jhero two"><div class="mat">${mediaTag(photos[0])}</div><div class="mat">${mediaTag(photos[1])}</div></div>`;
-  else if (photos.length >= 3) media = `<figure class="jhero">${mediaTag(photos[0])}</figure><div class="jmore">${photos.slice(1, 7).map((p) => `<div class="mat">${mediaTag(p)}</div>`).join('')}</div>`;
+  if (photos.length === 1) media = `<figure class="jhero one">${mediaTag(photos[0])}${m.caption ? `<figcaption>${esc(m.caption)}</figcaption>` : ''}</figure>`;
+  else if (photos.length >= 2) media = `<div class="jcarousel">${photos.slice(0, 10).map((p) => `<div class="jslide">${mediaTag(p)}</div>`).join('')}</div>`;
   const showCaption = m.caption && photos.length !== 1;
   const story = m.story ? (m.story.length > 460 ? m.story.slice(0, 460).trim() + '…' : m.story) : '';
   const loc = placeLabel(m);
@@ -470,24 +473,41 @@ function attachMomentClicks() {
   root().querySelectorAll('[data-moment]').forEach((c) => (c.onclick = () => nav(`#/moment/${c.getAttribute('data-moment')}`)));
 }
 
+// Does a moment match a free-text query? Searches everything a person would
+// scan for by eye — title, caption, story, place, companions, the year. Every
+// whitespace-separated term must appear (AND), so "maine 2009" narrows.
+const momentMatches = (m, q) => {
+  if (!q) return true;
+  const hay = [m.title, m.caption, m.story, placeLabel(m), m.location, String(m.year || ''), ...((m.tags || []).map((t) => t.label))]
+    .filter(Boolean).join(' ').toLowerCase();
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every((term) => hay.includes(term));
+};
+
 const viewChipsHTML = (id) =>
-  `<div class="viewrow" id="${id}">${JOURNEY_VIEWS.map((v) => `<button class="viewchip ${v.key === 'all' ? 'active' : ''}" data-view="${v.key}">${v.label}</button>`).join('')}</div>`;
+  `<div class="jvtools">
+     <div class="viewrow" id="${id}">${JOURNEY_VIEWS.map((v) => `<button class="viewchip ${v.key === 'all' ? 'active' : ''}" data-view="${v.key}">${v.label}</button>`).join('')}</div>
+     <label class="jsearch" title="Search this journey">${icon('search', 16)}<input type="search" id="${id}-q" class="jsearch-input" placeholder="Search this journey…" autocomplete="off"></label>
+   </div>`;
 
 // Mount a timeline that re-renders when the All / Solo / With-Companions filter
 // changes. Photo shape follows the journey owner's chosen shape.
 function mountFilteredTimeline(hostId, chipsId, moments, owner) {
   let view = 'all';
+  let query = '';
   const shape = (PHOTO_SHAPES.find((s) => s.key === owner?.journeyPhotoShape) || PHOTO_SHAPES[0]).r;
   const render = () => {
-    const filtered = filterByView(moments, view);
+    const filtered = filterByView(moments, view).filter((m) => momentMatches(m, query));
     const host = el(hostId);
     host.style.setProperty('--photo-radius', shape);
     host.innerHTML = filtered.length ? timelineHTML(filtered, owner)
+      : query ? `<div class="empty">No moments match “${esc(query)}”.</div>`
       : `<div class="empty">${view === 'solo' ? 'No solo moments yet — nothing without a companion tagged.' : view === 'companions' ? 'No moments with companions yet — nothing here has a tag.' : 'No moments yet.'}</div>`;
     attachMomentClicks();
     document.querySelectorAll(`#${chipsId} .viewchip`).forEach((c) => c.classList.toggle('active', c.dataset.view === view));
   };
   document.querySelectorAll(`#${chipsId} .viewchip`).forEach((c) => (c.onclick = () => { view = c.dataset.view; render(); }));
+  const q = el(`${chipsId}-q`);
+  if (q) q.oninput = () => { query = q.value.trim(); render(); };
   render();
 }
 
@@ -761,7 +781,8 @@ async function viewNotifications() {
     <div class="wrap">
       <div class="section-title">Notifications</div>
       ${notes.length ? notes.map((n) => `<div class="notif ${n.read ? '' : 'unread'}" ${n.memoryId ? `data-moment="${esc(n.memoryId)}"` : n.fromHandle ? `data-handle="${esc(n.fromHandle)}"` : ''} style="cursor:${n.memoryId || n.fromHandle ? 'pointer' : 'default'}">
-          <div>${line(n)}</div><div class="muted" style="font-size:0.8rem;margin-top:3px;">${timeAgo(n.createdAt)}</div></div>`).join('')
+          <div class="notif-av">${avatarImg({ avatarUri: n.fromAvatarUri, name: n.fromName || '?' }, 'na-img')}</div>
+          <div class="notif-body"><div>${line(n)}</div><div class="muted" style="font-size:0.8rem;margin-top:3px;">${timeAgo(n.createdAt)}</div></div></div>`).join('')
         : '<div class="empty"><div class="big">🔔</div>No notifications yet.</div>'}
       ${appFooter()}
     </div>`;
@@ -904,19 +925,22 @@ async function viewMomentForm(existingId) {
         <div class="field"><label>Caption</label><input name="caption" value="${m ? esc(m.caption) : ''}" placeholder="A short line"></div>
         <div class="field"><label>Story</label><textarea name="story" placeholder="Tell it the way you'd tell it…">${m ? esc(m.story) : ''}</textarea></div>
         <div class="field"><label>Where did it happen?</label>
-          <div class="row">
+          <div class="row" id="place-city-row">
             <input name="city" value="${esc(curCity)}" placeholder="City">
             <select name="stateSel">
               <option value="">State…</option>
               ${US_STATES.map((s) => `<option value="${esc(s)}" ${curState === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
             </select>
           </div>
-          <div class="hint">United States for now — we'll add more countries soon.</div>
+          <div id="place-custom-row" style="display:none;"><input name="customPlace" placeholder="Custom place — e.g. Grandma's kitchen"></div>
+          <div class="hint" id="place-hint">United States for now — we'll add more countries soon. <a href="#" id="place-toggle">Use a custom place name →</a></div>
+          <div id="saved-place" class="saved-comp"></div>
         </div>
         <div class="field"><label>Milestone</label><select name="milestone">${MILESTONE_OPTS.map(([v, l]) => `<option value="${v}" ${m && (m.milestone || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
         <div class="field"><label>Seal as a time capsule <span class="muted">— optional; stays hidden until this date</span></label><input name="sealedUntil" type="date" value="${m && m.sealedUntil ? esc(m.sealedUntil) : ''}"></div>
         <div class="field"><label>People who were there</label><input name="tags" value="${m ? esc((m.tags || []).map((t) => (t.handle ? '@' + t.handle : t.label)).join(', ')) : ''}" placeholder="Mom, @davidk, the whole crew">
-          <div class="hint">Separate with commas. Use @handle to link a real member.</div></div>
+          <div class="hint">Separate with commas. Use @handle to link a real member.</div>
+          <div id="saved-comp" class="saved-comp"></div></div>
         <div class="field"><label>Photos</label><input type="file" id="photo-input" accept="image/*,video/*" multiple><div class="photo-preview" id="preview"></div></div>
         <div class="field"><label>Or pull from your shelf</label><div id="shelf-strip" class="shelf-strip"><span class="muted" style="font-size:0.9rem;">Loading…</span></div>
           <div class="hint"><a href="#/import">Manage your import shelf →</a></div></div>
@@ -949,6 +973,49 @@ async function viewMomentForm(existingId) {
       renderPreview();
     }));
   })();
+  // Your saved custom companions — tap to reuse the exact same name.
+  (async () => {
+    const saved = await api.getSavedCompanions(state.user.id).catch(() => []);
+    const wrap = $('#saved-comp');
+    if (!wrap || !saved.length) return;
+    const tagsInput = $('#m-form input[name=tags]');
+    const has = (name) => tagsInput.value.split(',').map((s) => s.trim().toLowerCase()).includes(name.toLowerCase());
+    wrap.innerHTML = '<span class="saved-comp-lbl">Saved:</span>' +
+      saved.map((c) => `<button type="button" class="saved-chip" data-name="${esc(c.name)}">+ ${esc(c.name)}</button>`).join('');
+    wrap.querySelectorAll('.saved-chip').forEach((b) => (b.onclick = () => {
+      const name = b.getAttribute('data-name');
+      if (has(name)) return;
+      tagsInput.value = tagsInput.value.trim() ? `${tagsInput.value.replace(/,\s*$/, '')}, ${name}` : name;
+    }));
+  })();
+
+  // Place: a US city + state, OR a custom label. A toggle swaps between them;
+  // saved places (from before) are one-tap chips that fill the fields.
+  let customPlace = false;
+  const cityRow = $('#place-city-row'), customRow = $('#place-custom-row'), placeToggle = $('#place-toggle');
+  const setCustomPlace = (on) => {
+    customPlace = on;
+    cityRow.style.display = on ? 'none' : '';
+    customRow.style.display = on ? '' : 'none';
+    placeToggle.textContent = on ? 'Use a city & state instead →' : 'Use a custom place name →';
+  };
+  placeToggle.onclick = (e) => { e.preventDefault(); setCustomPlace(!customPlace); };
+  // Editing an older/custom moment (location text but no city) opens in custom mode.
+  if (m && !m.placeCity && (m.location || '').trim()) { setCustomPlace(true); $('#m-form input[name=customPlace]').value = m.location; }
+  (async () => {
+    const saved = await api.getSavedPlaces(state.user.id).catch(() => []);
+    const wrap = $('#saved-place');
+    if (!wrap || !saved.length) return;
+    wrap.innerHTML = '<span class="saved-comp-lbl">Your places:</span>' +
+      saved.map((s) => `<button type="button" class="saved-chip" data-id="${esc(s.id)}">${s.kind === 'custom' ? '✎ ' : '📍 '}${esc(s.label)}</button>`).join('');
+    wrap.querySelectorAll('.saved-chip').forEach((b) => (b.onclick = () => {
+      const sp = saved.find((x) => x.id === b.getAttribute('data-id'));
+      if (!sp) return;
+      if (sp.kind === 'custom') { setCustomPlace(true); $('#m-form input[name=customPlace]').value = sp.label; }
+      else { setCustomPlace(false); $('#m-form input[name=city]').value = sp.city || ''; $('#m-form select[name=stateSel]').value = sp.region || ''; }
+    }));
+  })();
+
   $('#m-form').onsubmit = async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
@@ -957,10 +1024,21 @@ async function viewMomentForm(existingId) {
     $('#form-err').innerHTML = '';
     try {
       const tags = (f.get('tags') || '').split(',').map((s) => s.trim()).filter(Boolean).map((label) => ({ label }));
-      const city = (f.get('city') || '').trim();
-      const st = f.get('stateSel') || '';
-      const place = city || st ? { city: city || null, region: st || null, country: city || st ? 'United States' : null, lat: null, lng: null } : null;
-      const locationText = [city, st].filter(Boolean).join(', ');
+      // Remember custom (non-@handle) names so they're reused consistently.
+      api.addSavedCompanions(state.user.id, tags.filter((t) => !t.label.startsWith('@')).map((t) => t.label)).catch(() => {});
+      let place = null;
+      let locationText = '';
+      if (customPlace) {
+        locationText = (f.get('customPlace') || '').trim();
+      } else {
+        const city = (f.get('city') || '').trim();
+        const st = f.get('stateSel') || '';
+        place = (city || st) ? { city: city || null, region: st || null, country: 'United States', lat: null, lng: null } : null;
+        locationText = [city, st].filter(Boolean).join(', ');
+      }
+      // Remember the place so it's reused consistently next time.
+      if (place) api.addSavedPlace(state.user.id, { kind: 'city', label: [place.city, place.region].filter(Boolean).join(', '), city: place.city, region: place.region, country: place.country }).catch(() => {});
+      else if (customPlace && locationText) api.addSavedPlace(state.user.id, { kind: 'custom', label: locationText }).catch(() => {});
       const payload = {
         year: +f.get('year'), month: f.get('month') ? +f.get('month') : null, day: f.get('day') ? +f.get('day') : null,
         title: f.get('title'), caption: f.get('caption'), story: f.get('story'),
@@ -997,7 +1075,7 @@ async function viewProfileEdit() {
   const total = () => photos.length + newFiles.length;
   root().innerHTML = `
     <div class="wrap">
-      <a class="back" href="#/profile">← Back</a>
+      <a class="back" id="pf-back" href="#/profile">← Back</a>
       <div class="section-title">Edit your profile</div>
       <div id="pf-err"></div>
       <form id="pf-form" class="panel">
@@ -1034,6 +1112,10 @@ async function viewProfileEdit() {
         <button class="btn block" type="submit">Save profile</button>
       </form>
     </div>`;
+  // Back should return where you came from — the Journey if you opened edit
+  // from there, the profile hub if from there — not always the hub.
+  const goBack = () => { if (history.length > 1) history.back(); else nav('#/journey'); };
+  $('#pf-back').onclick = (e) => { e.preventDefault(); goBack(); };
   let links = [...(u.links || [])].map((l) => ({ label: l.label || '', url: l.url || '' }));
   const renderLinks = () => {
     const w = $('#links-wrap');
@@ -1084,7 +1166,7 @@ async function viewProfileEdit() {
       const applied = await api.updateProfile(u.id, patch);
       Object.assign(state.user, patch);
       if (applied.avatarPhotos) { state.user.avatarPhotos = applied.avatarPhotos; state.user.avatarUri = applied.avatarUri; }
-      nav('#/profile');
+      goBack();
     } catch (err) { $('#pf-err').innerHTML = `<div class="error">${esc(err.message)}</div>`; btn.disabled = false; btn.textContent = 'Save profile'; }
   };
 }
@@ -1102,7 +1184,11 @@ async function viewMyProfile() {
   const menuRow = (href, ic, label) => `<a class="menu-row" href="${href}"><span class="mic">${ic}</span><span class="ml">${label}</span><span class="chev">›</span></a>`;
   root().innerHTML = `
     <div class="wrap">
-      ${monumentHTML(u, moments, circleCount, true)}
+      <div class="prof-hub-head">
+        <div class="prof-hub-av">${avatarImg({ avatarUri: activeAvatarUri(u), name: u.name }, 'pha-img')}</div>
+        <h1>${esc(u.name || 'Unnamed')}</h1>
+        <div class="handle">@${esc(u.handle || '')}</div>
+      </div>
       <div class="stats-card">
         <div class="row3">
           <div class="st"><div class="n">${moments.length}</div><div class="l">Moments</div></div>

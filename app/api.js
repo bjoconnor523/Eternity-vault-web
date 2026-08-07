@@ -482,6 +482,51 @@ const insertTags = async (momentId, tags) => {
   );
 };
 
+// A user's saved custom companions (named people with no account), so the same
+// name is reused consistently across moments.
+export const getSavedCompanions = async (userId) => {
+  const { data } = await supabase
+    .from('saved_companions')
+    .select('id, name')
+    .eq('owner_id', userId)
+    .order('name');
+  return data || [];
+};
+
+// Remember custom companion names (skips ones already saved, case-insensitive).
+export const addSavedCompanions = async (userId, names) => {
+  const clean = [...new Set((names || []).map((n) => (n || '').trim()).filter(Boolean))];
+  if (!clean.length) return;
+  const { data: existing } = await supabase.from('saved_companions').select('name').eq('owner_id', userId);
+  const have = new Set((existing || []).map((r) => r.name.toLowerCase()));
+  const toAdd = clean.filter((n) => !have.has(n.toLowerCase()));
+  if (toAdd.length) await supabase.from('saved_companions').insert(toAdd.map((name) => ({ owner_id: userId, name })));
+};
+
+// A user's saved places (canonical US cities and custom labels), reused so the
+// same place is picked identically every time.
+export const getSavedPlaces = async (userId) => {
+  const { data } = await supabase
+    .from('saved_places')
+    .select('id, kind, label, city, region, country, lat, lng')
+    .eq('owner_id', userId)
+    .order('label');
+  return data || [];
+};
+
+export const addSavedPlace = async (userId, p) => {
+  const label = (p?.label || '').trim();
+  if (!label) return;
+  const { data: existing } = await supabase
+    .from('saved_places').select('id').eq('owner_id', userId).ilike('label', label).maybeSingle();
+  if (existing) return;
+  await supabase.from('saved_places').insert({
+    owner_id: userId, kind: p.kind || 'custom', label,
+    city: p.city || null, region: p.region || null, country: p.country || null,
+    lat: p.lat ?? null, lng: p.lng ?? null,
+  });
+};
+
 // Resolve free-text tags: an "@handle" that matches a real member links to them.
 const resolveTags = async (rawTags) => {
   const tags = (rawTags || []).map(normalizeTag).filter((t) => (t.label || '').trim());
@@ -731,7 +776,19 @@ export const fetchNotificationsOf = async (userId) => {
     .order('created_at', { ascending: false })
     .limit(100);
   if (error) return [];
-  return (data || []).map(notifFromRow);
+  const notes = (data || []).map(notifFromRow);
+  // The row denormalizes the sender's name/handle but not their photo, so pull
+  // avatars for the senders in one query and attach them (signed for display).
+  const ids = [...new Set(notes.map((n) => n.fromId).filter(Boolean))];
+  if (ids.length) {
+    const { data: profs } = await supabase.from('profiles').select('id, avatar_url').in('id', ids);
+    const byId = new Map();
+    await Promise.all(
+      (profs || []).map(async (p) => byId.set(p.id, await signStoredUrl('photos', p.avatar_url)))
+    );
+    notes.forEach((n) => { n.fromAvatarUri = byId.get(n.fromId) || null; });
+  }
+  return notes;
 };
 
 export const markNotificationsRead = async (userId) => {

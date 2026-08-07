@@ -212,20 +212,38 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 /* ============================ Monument header ============================ */
 .monument { text-align: center; padding: 12px 0 4px; }
 
-/* The main portrait: large, squared, museum-matted (white board + black keylines). */
+/* Photo + wheel ride side by side, vertically centered, at the top of the header. */
+.monument-top {
+  display: flex; align-items: center; justify-content: center;
+  gap: 30px; flex-wrap: wrap; margin: 6px 0 18px;
+}
+/* The main portrait: squared, museum-matted (white board + black keylines).
+   Sized ~1.25x the wheel so it carries the visual weight beside it. */
 .monument-photo {
-  width: 268px; max-width: 78vw; aspect-ratio: 1; margin: 4px auto 20px;
-  background: #ffffff; padding: 15px; border: 2px solid #17130d;
+  width: 200px; max-width: 60vw; aspect-ratio: 1; margin: 0; flex: 0 0 auto;
+  background: #ffffff; padding: 13px; border: 2px solid #17130d;
   box-shadow: 0 22px 55px rgba(27, 75, 143, 0.22);
 }
 .monument-photo .mp-img { width: 100%; height: 100%; object-fit: cover; display: block; border: 1.5px solid #17130d; }
 .monument-photo .mp-ph {
   width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
-  background: var(--cream-deep); color: var(--blue); font-family: var(--display); font-size: 4.5rem; font-weight: 600; border: 1.5px solid #17130d;
+  background: var(--cream-deep); color: var(--blue); font-family: var(--display); font-size: 3.6rem; font-weight: 600; border: 1.5px solid #17130d;
 }
 
 /* The 4-quarter profile wheel (Sign · Stone · Number · Favorite color) */
-.wheel-wrap { max-width: 320px; margin: 26px auto 4px; }
+.wheel-wrap { width: 160px; max-width: 46vw; margin: 0; flex: 0 0 auto; }
+
+/* The personal profile page is the operational hub — a lean header, no wheel
+   or bio (those live on the Journey, the monument). Just who you are + menu. */
+.prof-hub-head { text-align: center; padding: 20px 0 8px; }
+.prof-hub-av .pha-img {
+  width: 88px; height: 88px; border-radius: 50%; object-fit: cover;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--cream-deep); color: var(--blue); font-family: var(--display);
+  font-weight: 600; font-size: 1.7rem; border: 2px solid var(--line);
+}
+.prof-hub-head h1 { font-size: 1.55rem; margin: 12px 0 0; color: var(--blue); font-weight: 600; }
+.prof-hub-head .handle { color: var(--muted); font-size: 0.95rem; margin-top: 2px; }
 .wheel { width: 100%; height: auto; display: block; filter: drop-shadow(0 10px 26px rgba(27, 75, 143, 0.16)); }
 
 .avatar-ring {
@@ -301,14 +319,23 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 
 /* Hero media — natural aspect, matted like a print */
 .jhero { background: var(--paper); padding: 10px; border-radius: 6px; box-shadow: 0 14px 44px rgba(27,75,143,0.14); border: 1px solid rgba(0,0,0,0.04); margin: 0 0 20px; }
-.jhero img, .jhero video { width: 100%; height: auto; max-height: 72vh; object-fit: cover; display: block; border-radius: 3px; }
+/* A single photo sits a touch smaller than before (~80%), so it reads as a
+   kept print rather than filling the screen. */
+.jhero.one { max-width: 80%; margin-left: auto; margin-right: auto; }
+.jhero img, .jhero video { width: 100%; height: auto; max-height: 58vh; object-fit: cover; display: block; border-radius: 3px; }
 .jhero figcaption { font-family: var(--hand); text-align: center; color: var(--muted); font-size: 1.1rem; padding-top: 8px; }
-.jhero.two { background: transparent; box-shadow: none; border: none; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.jhero.two .mat { background: var(--paper); padding: 8px; border-radius: 5px; box-shadow: 0 10px 30px rgba(27,75,143,0.12); }
-.jhero.two .mat img, .jhero.two .mat video { aspect-ratio: 1; }
-.jmore { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 20px; }
-.jmore .mat { background: var(--paper); padding: 6px; border-radius: 5px; box-shadow: 0 8px 20px rgba(27,75,143,0.1); }
-.jmore img, .jmore video { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; border-radius: 2px; }
+
+/* Multiple photos become a horizontal strip: each print ~72% wide with the
+   next peeking in by about a third, snapping as you swipe. */
+.jcarousel {
+  display: flex; gap: 12px; overflow-x: auto; margin: 0 0 20px; padding-bottom: 8px;
+  scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+}
+.jslide {
+  flex: 0 0 72%; scroll-snap-align: start; background: var(--paper); padding: 8px;
+  border-radius: 6px; box-shadow: 0 10px 30px rgba(27,75,143,0.12);
+}
+.jslide img, .jslide video { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; border-radius: 3px; }
 
 /* Story — book-like measure; drop-cap when text is the star */
 .jstory { font-size: 1.14rem; line-height: 1.85; color: var(--ink); max-width: 56ch; margin: 0 auto 14px; white-space: pre-wrap; }
@@ -448,8 +475,21 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
   box-shadow: 0 10px 24px rgba(227, 168, 30, 0.5); display: flex; align-items: center; justify-content: center;
 }
 .fab:hover { background: var(--gold-deep); }
-.notif { padding: 15px; border-bottom: 1px solid var(--line); }
+/* Saved-companion quick-add chips under the "people who were there" field. */
+.saved-comp { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.saved-comp-lbl { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.saved-chip { border: 1px solid var(--line); background: var(--paper); color: var(--blue); border-radius: 999px; padding: 4px 11px; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+.saved-chip:hover { background: rgba(27, 75, 143, 0.08); }
+
+.notif { display: flex; gap: 12px; align-items: flex-start; padding: 15px; border-bottom: 1px solid var(--line); }
 .notif.unread { background: rgba(255, 201, 60, 0.08); }
+.notif-body { flex: 1; min-width: 0; }
+.notif-av .na-img {
+  width: 42px; height: 42px; border-radius: 50%; object-fit: cover; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--cream-deep); color: var(--blue); font-weight: 600; font-size: 0.9rem;
+  border: 1px solid var(--line);
+}
 .photo-preview { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .photo-preview .pp { position: relative; }
 .photo-preview img { width: 86px; height: 86px; object-fit: cover; border-radius: 10px; border: 2px solid var(--line); }
@@ -465,6 +505,12 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 .modal h2 { color: var(--blue); margin-top: 0; }
 
 /* Journey view filter (All / Solo / With Companions) */
+/* View chips + a per-journey search box, side by side (like ⌘F for a life). */
+.jvtools { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin: 6px auto 22px; max-width: 720px; }
+.jvtools .viewrow { margin: 0; }
+.jsearch { display: flex; align-items: center; gap: 7px; background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; color: var(--muted); box-shadow: var(--shadow-sm); }
+.jsearch .ico { flex: 0 0 auto; }
+.jsearch-input { border: none; background: transparent; outline: none; font-size: 0.92rem; color: var(--ink); width: 190px; max-width: 46vw; }
 .viewrow { display: flex; gap: 4px; background: rgba(27, 75, 143, 0.06); border: 1px solid var(--line); border-radius: 999px; padding: 4px; margin: 6px auto 22px; max-width: 440px; }
 .viewchip { flex: 1; border: none; background: transparent; color: var(--muted); font-weight: 700; font-size: 0.9rem; padding: 10px 8px; border-radius: 999px; transition: background 0.15s, color 0.15s; }
 .viewchip.active { background: var(--blue); color: var(--cream); }
