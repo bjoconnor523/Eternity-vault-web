@@ -132,19 +132,25 @@ header { padding: 34px 24px 0; text-align: center; }
 .closing { text-align: center; padding: 60px 24px 30px; max-width: 620px; margin: 0 auto; }
 .closing p { font-size: clamp(1.15rem, 2.6vw, 1.5rem); color: var(--blue-deep); margin: 0; }
 
-/* ---------- Content pages (privacy / support / terms / 404) ---------- */
-.doc-head {
-  padding: 30px 24px 0;
+/* ---------- Standard header (shared by every sub-page) ---------- */
+.site-head {
+  padding: 26px 24px 0;
   text-align: center;
 }
-.doc-head .home-link {
+.site-head .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+}
+.site-head .brand img { width: 28px; height: 28px; display: block; }
+.site-head .brand span {
   font-family: var(--serif);
   font-weight: 600;
   color: var(--blue);
   font-size: 1.4rem;
-  text-decoration: none;
 }
-.doc-head .home-link:hover { text-decoration: underline; }
+.site-head .brand:hover span { text-decoration: underline; }
 
 .doc {
   flex: 1;
@@ -189,6 +195,77 @@ header { padding: 34px 24px 0; text-align: center; }
 }
 .notfound h1 { color: var(--blue); font-size: clamp(2rem, 7vw, 3.4rem); margin: 0 0 10px; }
 .notfound p { color: var(--muted); font-size: 1.15rem; max-width: 460px; }
+
+/* ---------- Feedback form ---------- */
+.doc .lead { font-size: 1.12rem; color: var(--muted); font-style: italic; margin: 0 0 26px; }
+
+.field { margin: 0 0 18px; }
+.field label {
+  display: block;
+  font-weight: 600;
+  color: var(--blue-deep);
+  font-size: 0.98rem;
+  margin: 0 0 6px;
+}
+.field label .opt { font-weight: 400; color: var(--muted); font-style: italic; }
+
+.field input,
+.field textarea {
+  width: 100%;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  color: var(--ink);
+  background: #fffdf7;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.field input:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(27,75,143,0.12);
+}
+.field textarea { resize: vertical; min-height: 150px; line-height: 1.55; }
+
+/* Honeypot — hidden from real people, catches bots. */
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+.btn-primary {
+  display: inline-block;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: #fffdf7;
+  background: var(--blue);
+  border: none;
+  border-radius: 999px;
+  padding: 13px 32px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.05s ease;
+}
+.btn-primary:hover { background: var(--blue-deep); }
+.btn-primary:active { transform: translateY(1px); }
+.btn-primary:disabled { opacity: 0.55; cursor: default; }
+
+.form-note {
+  margin: 14px 0 0;
+  font-size: 0.95rem;
+  min-height: 1.4em;
+}
+.form-note.err { color: #a1341f; }
+.form-note.ok { color: var(--blue-deep); }
+
+.thanks {
+  background: rgba(255,201,60,0.16);
+  border: 1px solid var(--gold);
+  border-radius: 12px;
+  padding: 24px 22px;
+  text-align: center;
+}
+.thanks h2 { margin: 0 0 8px; }
+.thanks p { margin: 0; color: var(--ink); }
 
 /* ---------- Footer ---------- */
 footer {
