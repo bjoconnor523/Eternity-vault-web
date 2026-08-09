@@ -301,11 +301,13 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 .jchapter .age { display: block; font-family: var(--hand); font-size: 1.5rem; color: var(--j-amber); margin-top: -2px; position: relative; z-index: 1; }
 .jchapter.decade::before { content: attr(data-decade); position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); font-family: var(--display); font-weight: 600; font-size: 8rem; color: rgba(27,75,143,0.05); letter-spacing: 6px; z-index: 0; pointer-events: none; white-space: nowrap; }
 
-/* Moment — soft tinted panel; color signals solo vs companion */
-.jmoment { position: relative; z-index: 1; border-radius: 20px; padding: 28px 30px 30px; margin: 40px 0; cursor: pointer; border: 1px solid transparent; box-shadow: 0 8px 26px rgba(27,75,143,0.06); transition: transform 0.1s ease, box-shadow 0.2s ease; }
-.jmoment:hover { transform: translateY(-2px); box-shadow: 0 18px 48px rgba(27,75,143,0.13); }
-.jmoment.solo { background: rgba(27,75,143,0.05); border-color: rgba(27,75,143,0.1); }
-.jmoment.companion { background: rgba(197,157,72,0.13); border-color: rgba(154,122,49,0.22); }
+/* Moment — an OPAQUE card; color signals solo vs companion. Opaque (not the
+   old translucent tint) so it reads as a distinct card on any journey backdrop
+   and never blends into the background behind it. */
+.jmoment { position: relative; z-index: 1; border-radius: 20px; padding: 28px 30px 30px; margin: 40px 0; cursor: pointer; border: 1px solid transparent; box-shadow: 0 10px 30px rgba(20,30,50,0.14); transition: transform 0.1s ease, box-shadow 0.2s ease; }
+.jmoment:hover { transform: translateY(-2px); box-shadow: 0 20px 52px rgba(20,30,50,0.22); }
+.jmoment.solo { background: #EFF3FA; border-color: rgba(27,75,143,0.20); }
+.jmoment.companion { background: #FBF3DE; border-color: rgba(154,122,49,0.34); }
 /* A bead where each moment meets the thread, coloured by solo/companion. */
 .jmoment::before { content: ''; position: absolute; top: -26px; left: 50%; transform: translateX(-50%); width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--cream); z-index: 2; }
 .jmoment.solo::before { background: #3A5A88; box-shadow: 0 0 0 2px rgba(58,90,136,0.35); }
@@ -314,8 +316,8 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 .jmoment .jdate { font-family: var(--hand); font-size: 1.4rem; text-align: center; margin-bottom: 4px; }
 .jmoment.solo .jdate { color: var(--j-blue); }
 .jmoment.companion .jdate { color: var(--j-amber-deep); }
-.jmoment .jtitle { font-family: var(--display); font-weight: 600; font-size: 2.2rem; line-height: 1.15; text-align: center; margin: 0 0 6px; color: var(--j-blue-deep); }
-.jmoment .jcaption { text-align: center; color: var(--muted); font-size: 1.12rem; font-style: italic; margin-bottom: 20px; }
+.jmoment .jtitle { font-family: var(--jt-title-font, var(--display)); font-weight: 600; font-size: 2.2rem; line-height: 1.15; text-align: center; margin: 0 0 6px; color: var(--jt-title-color, var(--j-blue-deep)); }
+.jmoment .jcaption { font-family: var(--jt-caption-font, inherit); text-align: center; color: var(--jt-caption-color, var(--muted)); font-size: 1.12rem; font-style: italic; margin-bottom: 20px; }
 
 /* Hero media — natural aspect, matted like a print */
 .jhero { background: var(--paper); padding: 10px; border-radius: 6px; box-shadow: 0 14px 44px rgba(27,75,143,0.14); border: 1px solid rgba(0,0,0,0.04); margin: 0 0 20px; }
@@ -338,14 +340,14 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 .jslide img, .jslide video { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; border-radius: 3px; }
 
 /* Story — book-like measure; drop-cap when text is the star */
-.jstory { font-size: 1.14rem; line-height: 1.85; color: var(--ink); max-width: 56ch; margin: 0 auto 14px; white-space: pre-wrap; }
+.jstory { font-family: var(--jt-story-font, inherit); font-size: 1.14rem; line-height: 1.85; color: var(--jt-story-color, var(--ink)); max-width: 56ch; margin: 0 auto 14px; white-space: pre-wrap; }
 .jmoment.text-only .jstory { font-size: 1.24rem; }
 .jstory.drop::first-letter { font-family: var(--display); font-size: 3.4rem; font-weight: 600; float: left; line-height: 0.72; padding: 8px 10px 0 0; color: var(--j-amber-deep); }
 
 /* Voice note */
 .jvoice { max-width: 440px; margin: 6px auto 14px; }
 .jvoice audio { width: 100%; }
-.jmeta { text-align: center; color: var(--muted); font-size: 0.92rem; margin-top: 6px; }
+.jmeta { font-family: var(--jt-location-font, inherit); text-align: center; color: var(--jt-location-color, var(--muted)); font-size: 0.92rem; margin-top: 6px; }
 
 /* Companions ribbon */
 .jcompanions { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
@@ -586,10 +588,32 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 
 /* Theme swatch grid (Customize Journey) */
 .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+.theme-grid.wide { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
 .theme-sw { border: 2px solid var(--line); border-radius: 12px; padding: 8px; cursor: pointer; text-align: center; background: var(--paper); }
 .theme-sw.sel { border-color: var(--blue); }
 .theme-sw .dot { height: 44px; border-radius: 8px; margin-bottom: 6px; border: 1px solid rgba(0,0,0,0.08); }
 .theme-sw .tn { font-size: 0.8rem; color: var(--ink); }
+/* Live mini backdrop preview inside a background swatch. */
+.theme-sw.big .sw-prev { height: 88px; border-radius: 9px; margin-bottom: 6px; overflow: hidden; border: 1px solid rgba(0,0,0,0.08); position: relative; }
+.theme-sw.big .sw-prev svg { position: absolute; inset: 0; }
+.theme-sw.big .sw-prev::after { content: ''; position: absolute; left: 18%; right: 18%; top: 30%; height: 30%; border-radius: 5px; background: #EFF3FA; box-shadow: 0 2px 6px rgba(20,30,50,0.28); }
+.theme-sw.big .sw-prev.dark::after { background: #F3F5FA; }
+
+/* Default fonts & colors pickers on Edit Journey. */
+.style-block { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-top: 12px; background: var(--paper); box-shadow: var(--shadow-sm); }
+.style-label { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 8px; }
+.pick-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.pick-row.swatches { margin-top: 10px; }
+.pick-chip { border: 1.5px solid var(--line); background: var(--paper); color: var(--ink); border-radius: 999px; padding: 6px 14px; font-size: 0.9rem; cursor: pointer; }
+.pick-chip.sel { border-color: var(--blue); background: var(--blue); color: var(--gold); }
+.swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; padding: 0; }
+.swatch.sel { border: 3px solid var(--ink); }
+
+/* The fixed journey-theme backdrop layer — sits behind the whole journey; the
+   opaque moment cards render above it (see .wrap.journeywide z-index). */
+.jbackdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+.jbackdrop svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wrap.journeywide { position: relative; z-index: 1; }
 
 @media (max-width: 560px) {
   .monument h1 { font-size: 1.9rem; }

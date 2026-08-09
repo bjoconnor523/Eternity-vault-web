@@ -24,21 +24,251 @@ const filterByView = (list, view) =>
     : view === 'companions' ? list.filter((m) => m.adopted || m.tags?.length)
     : list;
 
-// Journey background themes (flat colors ported from the app's journeyTheme.js;
-// the app's generative patterns are a later addition on web).
+// Journey background themes — kept in lockstep with the mobile app's
+// journeyTheme.js (BG_THEMES) and JourneyBackdrop.js. `color` is the flat base
+// fill; `kind` selects the generative SVG drawn on top (see backdropSVG below);
+// `dark` flags themes that want light chrome. 'default' is NO LONGER a blank
+// canvas — it's a soft warm paper (kind 'paper').
 const BG_THEMES = [
-  { key: 'default', label: 'Default', color: '#F7F9FC' }, { key: 'dawn', label: 'Dawn', color: '#FFF3D6' },
-  { key: 'night', label: 'Night Sky', color: '#141B30' }, { key: 'linen', label: 'Linen', color: '#FBF6EC' },
-  { key: 'hills', label: 'Hills', color: '#EAF1FB' }, { key: 'tide', label: 'Tide', color: '#E7F1F6' },
-  { key: 'sprig', label: 'Sprig', color: '#EFF3E9' }, { key: 'sunset', label: 'Sunset', color: '#FFD9A0' },
-  { key: 'meadow', label: 'Meadow', color: '#E4F2DC' }, { key: 'ocean', label: 'Ocean', color: '#0E3B57' },
-  { key: 'confetti', label: 'Confetti', color: '#FDFBF4' }, { key: 'citrus', label: 'Citrus', color: '#FFE9B8' },
-  { key: 'aurora', label: 'Aurora', color: '#101B33' }, { key: 'terracotta', label: 'Terracotta', color: '#F3D9C3' },
-  { key: 'wildflowers', label: 'Wildflowers', color: '#F9F5EA' }, { key: 'arcs', label: 'Sun Arcs', color: '#FDF8EF' },
-  { key: 'fireflies', label: 'Fireflies', color: '#14251E' },
+  { key: 'default', label: 'Soft Paper', color: '#F6EFDD', kind: 'paper' },
+  { key: 'dawn', label: 'Dawn Horizon', color: '#FFF3D6', kind: 'dawn' },
+  { key: 'night', label: 'Night Sky', color: '#141B30', kind: 'stars', dark: true },
+  { key: 'linen', label: 'Linen', color: '#FBF6EC', kind: 'linen' },
+  { key: 'hills', label: 'Rolling Hills', color: '#EAF1FB', kind: 'hills' },
+  { key: 'tide', label: 'Tide Lines', color: '#E7F1F6', kind: 'tide' },
+  { key: 'sprig', label: 'Sprig', color: '#EFF3E9', kind: 'sprig' },
+  { key: 'sunset', label: 'Sunset Glow', color: '#FFD9A0', kind: 'sunset' },
+  { key: 'meadow', label: 'Meadow', color: '#E4F2DC', kind: 'meadow' },
+  { key: 'ocean', label: 'Ocean Deep', color: '#0E3B57', kind: 'ocean', dark: true },
+  { key: 'confetti', label: 'Confetti', color: '#FDFBF4', kind: 'confetti' },
+  { key: 'citrus', label: 'Citrus', color: '#FFE9B8', kind: 'citrus' },
+  { key: 'aurora', label: 'Aurora', color: '#101B33', kind: 'aurora', dark: true },
+  { key: 'terracotta', label: 'Terracotta', color: '#F3D9C3', kind: 'terracotta' },
+  { key: 'wildflowers', label: 'Wildflowers', color: '#F9F5EA', kind: 'wildflowers' },
+  { key: 'arcs', label: 'Sun Arcs', color: '#FDF8EF', kind: 'arcs' },
+  { key: 'fireflies', label: 'Fireflies', color: '#14251E', kind: 'fireflies', dark: true },
+  { key: 'marble', label: 'Marble', color: '#ECEBE7', kind: 'marble' },
+  { key: 'constellation', label: 'Constellation', color: '#0E1834', kind: 'constellation', dark: true },
+  { key: 'gilded', label: 'Gilded', color: '#FBF3DC', kind: 'gilded' },
+  { key: 'topo', label: 'Topographic', color: '#EEF3EC', kind: 'topo' },
+  { key: 'quilt', label: 'Memory Quilt', color: '#F7EFE0', kind: 'quilt' },
+  { key: 'blossom', label: 'Blossom', color: '#F3F7FB', kind: 'blossom' },
+  { key: 'harvest', label: 'Harvest', color: '#F6E7CE', kind: 'harvest' },
+  { key: 'rainfall', label: 'Rainfall', color: '#DCE4EC', kind: 'rainfall' },
 ];
-const bgColor = (key) => (BG_THEMES.find((b) => b.key === key) || BG_THEMES[0]).color;
+const bgTheme = (key) => BG_THEMES.find((b) => b.key === key) || BG_THEMES[0];
+const bgColor = (key) => bgTheme(key).color;
 const PHOTO_SHAPES = [{ key: 'rounded', label: 'Rounded', r: '9px' }, { key: 'square', label: 'Square', r: '2px' }, { key: 'circle', label: 'Circle', r: '50%' }];
+
+// Journey-wide default fonts & colors — mirror the mobile lists (journeyTheme.js
+// FONTS / FONT_COLORS / STYLE_FIELDS). 'classic' font and 'default' color mean
+// "no override" (fall back to the card's own scheme).
+const FONTS = [
+  { key: 'classic', label: 'Classic', css: '' },
+  { key: 'serif', label: 'Serif', css: "'Lora', Georgia, serif" },
+  { key: 'rounded', label: 'Rounded', css: "'Nunito', system-ui, sans-serif" },
+  { key: 'hand', label: 'Handwritten', css: "'Caveat', cursive" },
+];
+const FONT_COLORS = [
+  { key: 'default', label: 'Blue', color: '#1B4B8F' }, { key: 'ink', label: 'Ink', color: '#1A2233' },
+  { key: 'plum', label: 'Plum', color: '#6B3F7A' }, { key: 'forest', label: 'Forest', color: '#2F6B45' },
+  { key: 'rust', label: 'Rust', color: '#9A4A24' }, { key: 'cream', label: 'Cream', color: '#F5EFE1' },
+  { key: 'teal', label: 'Teal', color: '#2C8A9E' }, { key: 'olive', label: 'Olive', color: '#707A2E' },
+  { key: 'amber', label: 'Amber', color: '#C9862E' }, { key: 'brick', label: 'Brick', color: '#A6412F' },
+  { key: 'mulberry', label: 'Mulberry', color: '#8C4560' }, { key: 'slate', label: 'Slate', color: '#3F4A61' },
+];
+const STYLE_FIELDS = [
+  { key: 'location', label: 'Location', sample: '📍 Dayton, Ohio' },
+  { key: 'title', label: 'Title', sample: 'Summer at the lake house' },
+  { key: 'caption', label: 'Caption', sample: 'The pool one from Vegas 😎' },
+  { key: 'story', label: 'Story', sample: 'Tell the whole story…' },
+];
+// A chosen font's CSS family (or '' for 'classic'/none); a chosen color's hex
+// (or '' for 'default'/none). Used both to preview and to set the timeline's
+// CSS variables so moment text picks up the journey-wide default.
+const fontCss = (key) => (FONTS.find((f) => f.key === key) || FONTS[0]).css;
+const fontColorHex = (key) => (!key || key === 'default') ? '' : (FONT_COLORS.find((c) => c.key === key) || {}).color || '';
+
+// ---- Generative journey backdrops (ported from mobile JourneyBackdrop.js) --
+// Each returns the inner SVG for a fixed 400x800 viewBox, sliced to cover. A
+// per-call unique suffix keeps gradient IDs from colliding when many previews
+// render on one page. Opaque moment cards sit on top, so busy patterns only
+// ever show in the gaps between cards.
+let _bdUid = 0;
+const _wrap = (inner) =>
+  `<svg viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block">${inner}</svg>`;
+const _bg = (fill) => `<rect width="400" height="800" fill="${fill}"/>`;
+
+const BACKDROPS = {
+  paper: (u) =>
+    `<defs><linearGradient id="pb${u}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FBF5E6"/><stop offset="100%" stop-color="#F1E7CE"/></linearGradient>
+      <radialGradient id="pv${u}" cx="50%" cy="42%" r="72%"><stop offset="0%" stop-color="#FFFDF6" stop-opacity="0.7"/><stop offset="100%" stop-color="#FFFDF6" stop-opacity="0"/></radialGradient></defs>
+      ${_bg(`url(#pb${u})`)}<rect width="400" height="800" fill="url(#pv${u})"/>
+      ${[[60,120],[330,90],[120,300],[300,360],[70,520],[350,560],[180,660],[40,720],[260,740]].map(([x,y],i)=>`<circle cx="${x}" cy="${y}" r="${i%2?1.6:2.4}" fill="#D8C79E" opacity="0.4"/>`).join('')}`,
+  dawn: (u) =>
+    `<defs><linearGradient id="ds${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFE9A8"/><stop offset="45%" stop-color="#FFF3D6"/><stop offset="100%" stop-color="#EAF1FB"/></linearGradient>
+      <radialGradient id="dn${u}" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#FFFDF3" stop-opacity="0.9"/><stop offset="100%" stop-color="#FFFDF3" stop-opacity="0"/></radialGradient></defs>
+      ${_bg(`url(#ds${u})`)}<rect x="220" y="60" width="180" height="180" fill="url(#dn${u})"/>
+      <path d="M0 560 C 90 520, 180 590, 260 545 C 320 515, 370 545, 400 530 L400 800 L0 800 Z" fill="#D9E7DE" opacity="0.7"/>
+      <path d="M0 620 C 70 585, 160 640, 250 600 C 330 565, 380 610, 400 595 L400 800 L0 800 Z" fill="#C3D9CC" opacity="0.8"/>`,
+  stars: (u) => {
+    const stars = [[40,90,6],[120,60,4],[210,130,5],[320,70,4],[370,180,6],[60,220,4],[160,260,6],[260,210,4],[340,300,5],[20,340,4],[110,400,5],[230,380,4],[330,420,6],[70,470,4],[190,510,5],[300,500,4],[40,560,6],[140,610,4],[260,600,5],[360,560,4]];
+    const spark = (cx,cy,r) => `M${cx} ${cy-r} L${cx+r*0.3} ${cy-r*0.3} L${cx+r} ${cy} L${cx+r*0.3} ${cy+r*0.3} L${cx} ${cy+r} L${cx-r*0.3} ${cy+r*0.3} L${cx-r} ${cy} L${cx-r*0.3} ${cy-r*0.3} Z`;
+    const lines = [[40,90,120,60],[120,60,210,130],[160,260,260,210],[230,380,330,420],[140,610,260,600]];
+    return `<defs><linearGradient id="ns${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#1B2233"/><stop offset="100%" stop-color="#0A0F1F"/></linearGradient></defs>${_bg(`url(#ns${u})`)}
+      ${lines.map(([a,b,c,d])=>`<line x1="${a}" y1="${b}" x2="${c}" y2="${d}" stroke="#3A4568" stroke-width="1" opacity="0.5"/>`).join('')}
+      ${stars.map(([cx,cy,r],i)=>`<path d="${spark(cx,cy,r)}" fill="#FFC93C" opacity="${0.35+(i%3)*0.22}"/>`).join('')}`;
+  },
+  linen: (u) =>
+    `<defs><pattern id="lw${u}" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="18" height="18" fill="#FBF6EC"/><line x1="0" y1="0" x2="0" y2="18" stroke="#EEE3C8" stroke-width="2"/><line x1="9" y1="0" x2="9" y2="18" stroke="#F3EADA" stroke-width="1"/></pattern></defs>${_bg(`url(#lw${u})`)}`,
+  hills: (u) =>
+    `<defs><linearGradient id="hs${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#EAF1FB"/><stop offset="100%" stop-color="#F7F9FC"/></linearGradient></defs>${_bg(`url(#hs${u})`)}
+      <path d="M0 500 C 80 450, 160 460, 240 495 C 300 520, 350 490, 400 470 L400 800 L0 800 Z" fill="#DCE9F2"/>
+      <path d="M0 580 C 90 540, 190 600, 280 560 C 330 538, 370 570, 400 555 L400 800 L0 800 Z" fill="#C9DCE3"/>
+      <path d="M0 660 C 100 620, 200 670, 300 630 C 340 614, 375 640, 400 628 L400 800 L0 800 Z" fill="#AFCBC6"/>`,
+  tide: (u) => {
+    const wave = (y,dy) => `M0 ${y} C 60 ${y-dy}, 120 ${y+dy}, 180 ${y} C 240 ${y-dy}, 300 ${y+dy}, 360 ${y} C 390 ${y-dy*0.5}, 400 ${y}, 400 ${y}`;
+    return `<defs><linearGradient id="ts${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F7F9FC"/><stop offset="100%" stop-color="#DCEBF0"/></linearGradient></defs>${_bg(`url(#ts${u})`)}
+      ${[280,340,400,460,520,580].map((y,i)=>`<path d="${wave(y,14)}" fill="none" stroke="#7FAFC4" stroke-width="2" opacity="${0.18+i*0.06}"/>`).join('')}
+      <rect x="0" y="700" width="400" height="100" fill="#EFE3C4" opacity="0.9"/>`;
+  },
+  sprig: () => {
+    const sprig = (x,y,s,r) => `<g transform="translate(${x} ${y}) rotate(${r}) scale(${s})"><line x1="0" y1="0" x2="0" y2="-24" stroke="#93A87D" stroke-width="1.5"/><path d="M0 -6 C -8 -10, -10 -18, -3 -20" stroke="#93A87D" stroke-width="1.5" fill="none"/><path d="M0 -14 C 8 -18, 10 -24, 4 -26" stroke="#93A87D" stroke-width="1.5" fill="none"/></g>`;
+    const pos = [[40,120,1,-10],[340,90,0.8,15],[120,260,1.1,5],[280,300,0.9,-20],[60,400,1,20],[360,420,0.8,-8],[180,480,1.2,0],[40,600,0.9,12],[300,600,1,-15],[150,700,0.85,10],[370,700,1,-5],[230,160,0.7,25]];
+    return `${_bg('#EFF3E9')}${pos.map(([x,y,s,r])=>sprig(x,y,s,r)).join('')}`;
+  },
+  sunset: (u) =>
+    `<defs><linearGradient id="ss${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#5A3D6E"/><stop offset="35%" stop-color="#C9663F"/><stop offset="65%" stop-color="#FFB347"/><stop offset="100%" stop-color="#FFD9A0"/></linearGradient></defs>${_bg(`url(#ss${u})`)}
+      <circle cx="200" cy="470" r="56" fill="#FFE28A" opacity="0.95"/>
+      ${[520,560,600].map((y,i)=>`<path d="M0 ${y} C 100 ${y-12}, 300 ${y+12}, 400 ${y}" stroke="#8C4560" stroke-width="${10-i*2}" opacity="0.25" fill="none"/>`).join('')}`,
+  meadow: (u) => {
+    const blades = [[30,760],[70,780],[110,755],[150,775],[190,760],[230,780],[270,758],[310,776],[350,762],[385,778]];
+    const blooms = [[50,700,'#FFC93C'],[140,730,'#C9663F'],[220,705,'#3AB0C4'],[300,735,'#FFC93C'],[370,710,'#8C4560'],[90,745,'#FFFFFF'],[260,748,'#FFFFFF']];
+    return `<defs><linearGradient id="ms${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#EAF6E4"/><stop offset="100%" stop-color="#CDE8C4"/></linearGradient></defs>${_bg(`url(#ms${u})`)}
+      ${blades.map(([x,y])=>`<path d="M${x} ${y} C ${x-4} ${y-22}, ${x+6} ${y-30}, ${x+2} ${y-44}" stroke="#6E9B5E" stroke-width="2.5" fill="none"/>`).join('')}
+      ${blooms.map(([x,y,c])=>`<circle cx="${x}" cy="${y}" r="5" fill="${c}" opacity="0.9"/>`).join('')}`;
+  },
+  ocean: (u) => {
+    const bubbles = [[60,620,6],[90,560,4],[320,640,7],[350,570,4],[200,690,5],[140,300,4],[280,250,5],[330,340,3],[70,220,5]];
+    return `<defs><linearGradient id="od${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#155E7D"/><stop offset="100%" stop-color="#082A40"/></linearGradient></defs>${_bg(`url(#od${u})`)}
+      <path d="M120 0 L200 0 L 320 800 L200 800 Z" fill="#7FDBE8" opacity="0.08"/>
+      <path d="M230 0 L290 0 L 400 620 L400 800 L340 800 Z" fill="#7FDBE8" opacity="0.06"/>
+      ${bubbles.map(([x,y,r])=>`<circle cx="${x}" cy="${y}" r="${r}" stroke="#9BE3EE" stroke-width="1.5" fill="none" opacity="0.5"/>`).join('')}`;
+  },
+  confetti: () => {
+    const bits = [[40,90,20,'#1B4B8F'],[110,60,-30,'#FFC93C'],[200,120,45,'#3AB0C4'],[290,70,10,'#C9663F'],[360,140,-15,'#2E9E5B'],[70,230,60,'#8C4560'],[180,280,-45,'#FFC93C'],[300,240,30,'#1B4B8F'],[30,380,-20,'#3AB0C4'],[140,420,15,'#C9663F'],[250,380,-60,'#2E9E5B'],[350,440,40,'#FFC93C'],[90,540,25,'#1B4B8F'],[210,560,-35,'#8C4560'],[320,590,50,'#3AB0C4'],[50,680,-10,'#FFC93C'],[170,700,35,'#2E9E5B'],[280,720,-50,'#1B4B8F'],[370,690,20,'#C9663F']];
+    return `${_bg('#FDFBF4')}${bits.map(([x,y,r,c])=>`<rect x="${x}" y="${y}" width="10" height="5" rx="2" fill="${c}" opacity="0.75" transform="rotate(${r} ${x} ${y})"/>`).join('')}`;
+  },
+  citrus: (u) => {
+    const rounds = [[60,130,70,'#FFB347'],[330,90,55,'#FFC93C'],[370,300,80,'#F2A03D'],[40,420,60,'#FFD36B'],[300,520,75,'#FFB347'],[90,660,85,'#FFC93C'],[350,720,55,'#F2A03D']];
+    return `<defs><linearGradient id="cb${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFF3D0"/><stop offset="100%" stop-color="#FFE1A3"/></linearGradient></defs>${_bg(`url(#cb${u})`)}
+      ${rounds.map(([x,y,r,c])=>`<circle cx="${x}" cy="${y}" r="${r}" fill="${c}" opacity="0.28"/>`).join('')}`;
+  },
+  aurora: (u) =>
+    `<defs><linearGradient id="as${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0B1430"/><stop offset="100%" stop-color="#12233F"/></linearGradient></defs>${_bg(`url(#as${u})`)}
+      <path d="M-20 260 C 80 140, 180 320, 300 180 C 350 120, 400 160, 420 130 L420 260 C 320 340, 200 240, 100 340 C 40 390, -10 340, -20 360 Z" fill="#2E9E5B" opacity="0.30"/>
+      <path d="M-20 400 C 90 300, 210 460, 320 330 C 370 275, 410 310, 420 290 L420 420 C 330 500, 190 390, 90 480 C 30 530, -10 480, -20 500 Z" fill="#3AB0C4" opacity="0.24"/>
+      <path d="M-20 560 C 100 470, 230 610, 340 500 L420 460 L420 580 C 320 660, 180 560, 80 640 L-20 660 Z" fill="#6B3F7A" opacity="0.22"/>
+      ${[[60,90],[160,60],[260,110],[340,70],[40,170],[370,190]].map(([x,y])=>`<circle cx="${x}" cy="${y}" r="1.8" fill="#FFFFFF" opacity="0.8"/>`).join('')}`,
+  terracotta: (u) => {
+    const arch = (x,y,r) => `M${x-r} ${y} A ${r} ${r} 0 0 1 ${x+r} ${y} L${x+r} ${y+r*1.2} L${x-r} ${y+r*1.2} Z`;
+    return `<defs><linearGradient id="tb${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F6E2CE"/><stop offset="100%" stop-color="#EFC9A8"/></linearGradient></defs>${_bg(`url(#tb${u})`)}
+      <path d="${arch(80,120,55)}" fill="#DFA477" opacity="0.4"/><path d="${arch(300,90,70)}" fill="#C97F4E" opacity="0.3"/>
+      <path d="${arch(200,330,65)}" fill="#B96A3E" opacity="0.28"/><path d="${arch(60,520,50)}" fill="#C97F4E" opacity="0.34"/>
+      <path d="${arch(330,480,60)}" fill="#DFA477" opacity="0.4"/><path d="${arch(160,660,70)}" fill="#C97F4E" opacity="0.3"/>
+      <circle cx="350" cy="680" r="26" fill="#B96A3E" opacity="0.3"/>`;
+  },
+  wildflowers: () => {
+    const fl = (x,y,c,s) => `<g transform="translate(${x} ${y}) scale(${s})"><line x1="0" y1="0" x2="0" y2="-30" stroke="#7C9165" stroke-width="2"/><circle cx="0" cy="-34" r="6" fill="${c}"/><circle cx="0" cy="-34" r="2.4" fill="#FFF3D0"/></g>`;
+    const spots = [[40,150,'#C9663F',1],[110,120,'#3AB0C4',0.8],[340,170,'#FFC93C',1.1],[70,320,'#8C4560',0.9],[280,300,'#FFC93C',0.8],[370,340,'#2E9E5B',1],[140,470,'#3AB0C4',1],[230,440,'#C9663F',0.85],[40,590,'#FFC93C',1],[320,600,'#8C4560',1.1],[180,640,'#2E9E5B',0.8],[90,740,'#C9663F',1],[270,750,'#3AB0C4',0.9],[370,730,'#FFC93C',0.85]];
+    return `${_bg('#F9F5EA')}${spots.map(([x,y,c,s])=>fl(x,y,c,s)).join('')}`;
+  },
+  arcs: () => {
+    const set = (cx,cy,colors) => colors.map((c,i)=>`<circle cx="${cx}" cy="${cy}" r="${60+i*26}" stroke="${c}" stroke-width="12" fill="none" opacity="0.5"/>`).join('');
+    return `${_bg('#FDF8EF')}${set(0,0,['#FFC93C','#F2A03D','#3AB0C4','#1B4B8F'])}${set(400,800,['#FFC93C','#C9663F','#2E9E5B','#3AB0C4'])}`;
+  },
+  fireflies: (u) => {
+    const flies = [[70,180],[180,120],[300,200],[350,100],[40,320],[230,300],[330,380],[110,430],[270,480],[60,560],[190,600],[340,620],[130,710],[290,730]];
+    return `<defs><linearGradient id="db${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#16281F"/><stop offset="100%" stop-color="#0C1A13"/></linearGradient>
+      <radialGradient id="gl${u}" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#FFE28A" stop-opacity="0.9"/><stop offset="100%" stop-color="#FFE28A" stop-opacity="0"/></radialGradient></defs>${_bg(`url(#db${u})`)}
+      ${flies.map(([x,y],i)=>`<circle cx="${x}" cy="${y}" r="${i%3===0?14:9}" fill="url(#gl${u})"/><circle cx="${x}" cy="${y}" r="2" fill="#FFE28A" opacity="0.95"/>`).join('')}
+      <path d="M0 780 C 80 750, 160 790, 240 765 C 310 745, 370 775, 400 760 L400 800 L0 800 Z" fill="#1E3527" opacity="0.9"/>`;
+  },
+  marble: (u) => {
+    const vein = (d,w,o) => `<path d="${d}" stroke="#B9BDC4" stroke-width="${w}" fill="none" opacity="${o}" stroke-linecap="round"/>`;
+    return `<defs><linearGradient id="mb${u}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#F4F3F0"/><stop offset="100%" stop-color="#E4E3DE"/></linearGradient></defs>${_bg(`url(#mb${u})`)}
+      ${vein('M-20 140 C 90 90, 180 220, 300 150 C 360 118, 410 170, 440 140',3,0.5)}${vein('M-20 150 C 100 110, 190 235, 310 168',1.2,0.35)}
+      ${vein('M-20 420 C 120 350, 220 470, 340 400 C 390 372, 420 420, 440 405',3.5,0.45)}${vein('M40 -20 C 80 120, 30 240, 120 360 C 180 440, 120 560, 180 700',2.2,0.4)}
+      ${vein('M360 -20 C 320 140, 380 260, 300 380 C 250 456, 330 580, 280 800',2.6,0.4)}${vein('M-20 640 C 110 590, 210 700, 330 630 C 380 602, 420 650, 440 632',3,0.4)}`;
+  },
+  constellation: (u) => {
+    const stars = [[50,90,2.6],[130,60,1.8],[210,120,3],[300,80,2],[360,150,2.4],[70,210,2],[180,250,2.8],[270,210,1.8],[340,290,2.6],[40,340,2.2],[150,380,2.6],[250,350,1.8],[340,420,3],[80,470,2],[200,510,2.8],[310,490,2],[50,590,2.4],[160,630,2],[270,600,2.8],[360,640,2],[110,710,2.2],[300,730,2.6]];
+    const links = [[0,1],[1,2],[2,4],[5,6],[6,7],[6,9],[10,11],[11,12],[13,14],[14,15],[16,17],[17,18],[18,19],[20,18]];
+    return `<defs><linearGradient id="cs${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#12204A"/><stop offset="100%" stop-color="#0A122C"/></linearGradient></defs>${_bg(`url(#cs${u})`)}
+      ${links.map(([a,b])=>`<line x1="${stars[a][0]}" y1="${stars[a][1]}" x2="${stars[b][0]}" y2="${stars[b][1]}" stroke="#8AA0D8" stroke-width="1" opacity="0.35"/>`).join('')}
+      ${stars.map(([cx,cy,r],i)=>`<circle cx="${cx}" cy="${cy}" r="${r}" fill="${i%5===0?'#FFD98A':'#DCE6FF'}" opacity="${0.7+(i%3)*0.1}"/>`).join('')}`;
+  },
+  gilded: (u) => {
+    const rays = (cx,cy,n,len) => Array.from({length:n},(_,i)=>{const a=(Math.PI/2)*(i/(n-1))+(cx===0?0:Math.PI);return `<line x1="${cx}" y1="${cy}" x2="${cx+Math.cos(a)*len}" y2="${cy+Math.sin(a)*len}" stroke="#D9AE48" stroke-width="${i%2?1:2}" opacity="0.4"/>`;}).join('');
+    return `<defs><linearGradient id="gb${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FCF5DF"/><stop offset="100%" stop-color="#F6EBCB"/></linearGradient></defs>${_bg(`url(#gb${u})`)}
+      ${rays(0,0,11,340)}${rays(400,800,11,340)}
+      <circle cx="0" cy="0" r="26" stroke="#D9AE48" stroke-width="2" fill="none" opacity="0.5"/><circle cx="400" cy="800" r="26" stroke="#D9AE48" stroke-width="2" fill="none" opacity="0.5"/>`;
+  },
+  topo: () => {
+    const ring = (cx,cy,base,n,color) => Array.from({length:n},(_,i)=>{const r=base+i*20;return `<path d="M${cx-r} ${cy} a ${r} ${r*0.62} 0 1 0 ${r*2} 0 a ${r} ${r*0.62} 0 1 0 ${-r*2} 0" fill="none" stroke="${color}" stroke-width="1.5" opacity="0.4"/>`;}).join('');
+    return `${_bg('#EDF2EA')}${ring(110,200,26,5,'#A9BE9E')}${ring(320,470,30,5,'#9FB8C0')}${ring(90,660,22,4,'#C2B58E')}`;
+  },
+  quilt: () => {
+    const cell=80, tones=['#E7C24C','#8FB3D9','#D98C5F','#9FC49A','#C89BB4','#E9DCBB'];
+    let sq=''; let n=0;
+    for(let gy=0;gy<10;gy++)for(let gx=0;gx<5;gx++){const x=gx*cell,y=gy*cell,c=tones[(gx+gy*3+n)%tones.length];sq+=`<rect x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${c}" opacity="0.22"/>`+((gx+gy)%2===0?`<path d="M${x} ${y} L${x+cell} ${y+cell}" stroke="${c}" stroke-width="6" opacity="0.16"/>`:'');n++;}
+    let grid='';
+    for(let i=0;i<=5;i++)grid+=`<line x1="${i*cell}" y1="0" x2="${i*cell}" y2="800" stroke="#B49B72" stroke-width="1" stroke-dasharray="3 4" opacity="0.4"/>`;
+    for(let i=0;i<=10;i++)grid+=`<line x1="0" y1="${i*cell}" x2="400" y2="${i*cell}" stroke="#B49B72" stroke-width="1" stroke-dasharray="3 4" opacity="0.4"/>`;
+    return `${_bg('#F7EFE0')}${sq}${grid}`;
+  },
+  blossom: (u) => {
+    const petal = (x,y,s,r,c) => `<path d="M${x} ${y} C ${x-8*s} ${y-6*s}, ${x-8*s} ${y-18*s}, ${x} ${y-22*s} C ${x+8*s} ${y-18*s}, ${x+8*s} ${y-6*s}, ${x} ${y} Z" fill="${c}" opacity="0.55" transform="rotate(${r} ${x} ${y})"/>`;
+    const spots = [[50,110,1,20,'#FFD98A'],[130,70,0.8,-30,'#FFFFFF'],[250,130,1.1,45,'#AFC9EC'],[330,90,0.9,10,'#FFD98A'],[70,250,1,-15,'#FFFFFF'],[200,290,1.2,60,'#FFD98A'],[320,250,0.9,-45,'#AFC9EC'],[40,400,0.85,25,'#FFFFFF'],[150,440,1,15,'#FFD98A'],[280,400,1.1,-60,'#AFC9EC'],[360,460,0.8,40,'#FFFFFF'],[90,570,1,-20,'#FFD98A'],[220,600,0.9,35,'#AFC9EC'],[330,590,1,-50,'#FFFFFF'],[60,700,1.1,10,'#FFD98A'],[180,730,0.85,-35,'#AFC9EC'],[300,720,1,50,'#FFFFFF']];
+    return `<defs><linearGradient id="bl${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F6FAFE"/><stop offset="100%" stop-color="#E8F0F8"/></linearGradient></defs>${_bg(`url(#bl${u})`)}${spots.map(([x,y,s,r,c])=>petal(x,y,s,r,c)).join('')}`;
+  },
+  harvest: (u) => {
+    const leaf = (x,y,s,r,c) => `<path d="M${x} ${y} C ${x-10*s} ${y-8*s}, ${x-6*s} ${y-22*s}, ${x} ${y-26*s} C ${x+6*s} ${y-22*s}, ${x+10*s} ${y-8*s}, ${x} ${y} Z" fill="${c}" opacity="0.5" transform="rotate(${r} ${x} ${y})"/>`;
+    const spots = [[60,120,1,20,'#C46B34'],[150,80,0.8,-30,'#D9A038'],[260,130,1.1,45,'#8A8A3A'],[340,90,0.9,10,'#C46B34'],[80,260,1,-15,'#D9A038'],[200,300,1.2,60,'#A6412F'],[320,250,0.9,-45,'#8A8A3A'],[40,410,0.9,25,'#C46B34'],[160,450,1,15,'#D9A038'],[290,410,1.1,-60,'#A6412F'],[360,470,0.8,40,'#8A8A3A'],[90,580,1,-20,'#C46B34'],[220,610,0.9,35,'#D9A038'],[330,600,1,-50,'#A6412F'],[60,710,1.1,10,'#8A8A3A'],[180,740,0.85,-35,'#C46B34'],[300,730,1,50,'#D9A038']];
+    return `<defs><linearGradient id="hb${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FAEDD4"/><stop offset="100%" stop-color="#F0DCB6"/></linearGradient></defs>${_bg(`url(#hb${u})`)}${spots.map(([x,y,s,r,c])=>leaf(x,y,s,r,c)).join('')}`;
+  },
+  rainfall: (u) => {
+    let drops='';
+    for(let i=0;i<46;i++){const x=(i*71)%400,y=(i*137)%780,len=16+(i%4)*8;drops+=`<line x1="${x}" y1="${y}" x2="${x-4}" y2="${y+len}" stroke="#7C93AD" stroke-width="1.5" opacity="0.3" stroke-linecap="round"/>`;}
+    return `<defs><linearGradient id="rb${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#E4EBF2"/><stop offset="100%" stop-color="#CDD8E2"/></linearGradient></defs>${_bg(`url(#rb${u})`)}
+      ${[133,267].map((x)=>`<line x1="${x}" y1="0" x2="${x}" y2="800" stroke="#AEBECE" stroke-width="2" opacity="0.35"/>`).join('')}
+      ${[200,400,600].map((y)=>`<line x1="0" y1="${y}" x2="400" y2="${y}" stroke="#AEBECE" stroke-width="2" opacity="0.35"/>`).join('')}${drops}`;
+  },
+};
+// The inner SVG string for a theme kind, or '' for an unknown/absent kind.
+function backdropSVG(kind) {
+  const gen = BACKDROPS[kind];
+  return gen ? _wrap(gen('_' + (_bdUid++))) : '';
+}
+
+// A fixed, behind-everything layer painting the owner's chosen journey theme:
+// the flat base color + the generative pattern on top. Opaque moment cards
+// sit above it, so the pattern only ever shows in the gaps.
+function journeyBackdropHTML(owner) {
+  const t = bgTheme(owner?.journeyBg);
+  return `<div class="jbackdrop ${t.dark ? 'dark' : ''}" style="background:${t.color}" aria-hidden="true">${backdropSVG(t.kind)}</div>`;
+}
+
+// Set (or clear) the journey-wide default font/color CSS variables on a
+// timeline host, from the owner's stored per-field choices. Only real choices
+// are set; anything left at 'classic'/'default' falls back to the card scheme.
+function applyThemeVars(host, owner) {
+  const set = (name, val) => (val ? host.style.setProperty(name, val) : host.style.removeProperty(name));
+  for (const f of STYLE_FIELDS) {
+    set(`--jt-${f.key}-font`, fontCss(owner?.[`${f.key}Font`]));
+    set(`--jt-${f.key}-color`, fontColorHex(owner?.[`${f.key}FontColor`]));
+  }
+}
 
 // Merch catalog — mirrors the app's lib/merch.js. Prices in one place.
 const PRODUCTS = [
@@ -499,6 +729,7 @@ function mountFilteredTimeline(hostId, chipsId, moments, owner) {
     const filtered = filterByView(moments, view).filter((m) => momentMatches(m, query));
     const host = el(hostId);
     host.style.setProperty('--photo-radius', shape);
+    applyThemeVars(host, owner);
     host.innerHTML = filtered.length ? timelineHTML(filtered, owner)
       : query ? `<div class="empty">No moments match “${esc(query)}”.</div>`
       : `<div class="empty">${view === 'solo' ? 'No solo moments yet — nothing without a companion tagged.' : view === 'companions' ? 'No moments with companions yet — nothing here has a tag.' : 'No moments yet.'}</div>`;
@@ -578,11 +809,12 @@ async function viewJourney() {
   const [moments, circleCount] = await Promise.all([api.getMomentsOf(state.user.id), api.fetchCircleCountOf(state.user.id)]);
   const sealed = state.user.memorialState === 'sealed';
   root().innerHTML = `
+    ${journeyBackdropHTML(state.user)}
     <div class="wrap journeywide">
       ${monumentHTML(state.user, moments, circleCount, true)}
       ${moments.length ? journeySummary(moments) : ''}
       ${moments.length ? timelineMapHTML(moments, state.user) : ''}
-      ${!sealed ? `<div class="btn-row"><a class="btn" href="#/add">+ Add a moment</a><a class="btn ghost" href="#/profile/edit">Edit profile</a><a class="btn ghost" href="#/profile/customize">Customize</a></div>` : ''}
+      ${!sealed ? `<div class="btn-row"><a class="btn" href="#/add">+ Add a moment</a><a class="btn ghost" href="#/profile/customize">✦ Edit Journey</a><a class="btn ghost" href="#/profile/edit">Edit profile</a></div>` : ''}
       <div class="section-title" style="text-align:center;">Your Journey</div>
       ${moments.length ? `${viewChipsHTML('jv-chips')}${decadeRailHTML(moments)}<div id="jv-host"></div>`
         : `<div class="empty"><div class="big">🌱</div>Your journey is empty.<br>Add the first moment of your life's record.
@@ -612,6 +844,7 @@ async function viewPerson(handle) {
   const [moments, circleCount, circlePairs] = await Promise.all([api.getMomentsOf(u.id), api.fetchCircleCountOf(u.id), api.fetchCircleOf(state.user.id)]);
   const inCircle = circlePairs.some((p) => (p.a === state.user.id && p.b === u.id) || (p.b === state.user.id && p.a === u.id));
   root().innerHTML = `
+    ${journeyBackdropHTML(u)}
     <div class="wrap journeywide">
       <a class="back" href="#/world">← World</a>
       ${monumentHTML(u, moments, circleCount, false)}
@@ -1243,7 +1476,7 @@ async function viewMyProfile() {
         ${menuRow('#/import', '📥', 'Import Photos')}
         ${menuRow('#/profile/edit', '✎', 'Edit Profile')}
         ${menuRow('#/profile/qr', '▦', 'My QR Code')}
-        ${menuRow('#/profile/customize', '🎨', 'Customize Journey')}
+        ${menuRow('#/profile/customize', '🎨', 'Edit Journey')}
         ${menuRow('#/shared', '📬', 'Shared With Me')}
         ${menuRow('#/merch', '🛍️', 'Order Memories')}
         ${menuRow('#/orders', '📦', 'My Orders')}
@@ -1280,31 +1513,60 @@ async function viewQR() {
   }
 }
 
-// ---- Customize Journey -----------------------------------------------------
+// ---- Edit Journey (the journey's look: theme, shape, default fonts/colors) --
 async function viewCustomize() {
   renderTopbar('profile');
   const u = state.user;
+  const fontsRow = (field) =>
+    `<div class="pick-row" data-font-field="${field}">${FONTS.map((f) => `<button type="button" class="pick-chip ${(u[`${field}Font`] || 'classic') === f.key ? 'sel' : ''}" data-font="${f.key}" style="${f.css ? `font-family:${f.css}` : ''}">${f.label}</button>`).join('')}</div>`;
+  const colorsRow = (field) =>
+    `<div class="pick-row swatches" data-color-field="${field}">${FONT_COLORS.map((c) => `<button type="button" class="swatch ${(u[`${field}FontColor`] || 'default') === c.key ? 'sel' : ''}" data-color="${c.key}" title="${c.label}" style="background:${c.color}"></button>`).join('')}</div>`;
   root().innerHTML = `
     <div class="wrap">
       <a class="back" href="#/profile">← Back</a>
-      <div class="section-title">Customize Journey</div>
+      <div class="section-title">Edit Journey</div>
+      <p class="muted" style="margin-top:-4px;">The look and feel of your Journey — its backdrop, photo shape, and the default fonts &amp; colors for every moment.</p>
       <div id="cust-msg"></div>
+
       <div class="section-title" style="font-size:1.15rem;">Background</div>
-      <div class="theme-grid" id="bg-grid">${BG_THEMES.map((b) => `<div class="theme-sw ${u.journeyBg === b.key ? 'sel' : ''}" data-bg="${b.key}"><div class="dot" style="background:${b.color}"></div><div class="tn">${b.label}</div></div>`).join('')}</div>
+      <div class="theme-grid wide" id="bg-grid">${BG_THEMES.map((b) => `<div class="theme-sw big ${u.journeyBg === b.key ? 'sel' : ''}" data-bg="${b.key}"><div class="sw-prev ${b.dark ? 'dark' : ''}" style="background:${b.color}">${backdropSVG(b.kind)}</div><div class="tn">${b.label}</div></div>`).join('')}</div>
+
       <div class="section-title" style="font-size:1.15rem;">Photo shape</div>
       <div class="theme-grid" id="shape-grid">${PHOTO_SHAPES.map((s) => `<div class="theme-sw ${u.journeyPhotoShape === s.key ? 'sel' : ''}" data-shape="${s.key}"><div class="dot" style="background:var(--blue);border-radius:${s.r}"></div><div class="tn">${s.label}</div></div>`).join('')}</div>
-      <p class="muted" style="margin-top:18px;font-size:0.88rem;">More journey styling (fonts, patterned backdrops) is coming to the web soon.</p>
+
+      <div class="section-title" style="font-size:1.15rem;">Default fonts &amp; colors</div>
+      <p class="muted" style="margin-top:-4px;font-size:0.9rem;">These set the look for every moment. Pick “Classic” / “Blue” to leave a field on its default.</p>
+      ${STYLE_FIELDS.map((f) => `<div class="style-block"><div class="style-label">${f.label}</div>${fontsRow(f.key)}${colorsRow(f.key)}</div>`).join('')}
     </div>`;
+
+  const save = async (field, val) => {
+    try { await api.updateProfile(u.id, { [field]: val }); state.user[field] = val; $('#cust-msg').innerHTML = '<div class="success">Saved.</div>'; }
+    catch (err) { $('#cust-msg').innerHTML = `<div class="error">${esc(err.message)}</div>`; }
+  };
   const wire = (gridId, attr, field) =>
-    root().querySelectorAll(`#${gridId} .theme-sw`).forEach((sw) => (sw.onclick = async () => {
-      const val = sw.getAttribute(attr);
+    root().querySelectorAll(`#${gridId} .theme-sw`).forEach((sw) => (sw.onclick = () => {
       root().querySelectorAll(`#${gridId} .theme-sw`).forEach((x) => x.classList.remove('sel'));
       sw.classList.add('sel');
-      try { await api.updateProfile(u.id, { [field]: val }); state.user[field] = val; $('#cust-msg').innerHTML = '<div class="success">Saved.</div>'; }
-      catch (err) { $('#cust-msg').innerHTML = `<div class="error">${esc(err.message)}</div>`; }
+      save(field, sw.getAttribute(attr));
     }));
   wire('bg-grid', 'data-bg', 'journeyBg');
   wire('shape-grid', 'data-shape', 'journeyPhotoShape');
+  root().querySelectorAll('[data-font-field]').forEach((row) => {
+    const field = row.getAttribute('data-font-field');
+    row.querySelectorAll('.pick-chip').forEach((chip) => (chip.onclick = () => {
+      row.querySelectorAll('.pick-chip').forEach((x) => x.classList.remove('sel'));
+      chip.classList.add('sel');
+      save(`${field}Font`, chip.getAttribute('data-font'));
+    }));
+  });
+  root().querySelectorAll('[data-color-field]').forEach((row) => {
+    const field = row.getAttribute('data-color-field');
+    row.querySelectorAll('.swatch').forEach((sw) => (sw.onclick = () => {
+      row.querySelectorAll('.swatch').forEach((x) => x.classList.remove('sel'));
+      sw.classList.add('sel');
+      save(`${field}FontColor`, sw.getAttribute('data-color'));
+    }));
+  });
 }
 
 // ---- Settings --------------------------------------------------------------
