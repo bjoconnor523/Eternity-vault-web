@@ -197,6 +197,7 @@ export const profileToUser = (p) => ({
   bio: p.bio,
   epitaph: p.epitaph || '',
   isModerator: !!p.is_moderator,
+  isAdmin: !!p.is_admin,
   accountType: p.account_type || 'personal',
   keeperId: p.keeper_id || null,
   memorialState: p.memorial_state || 'living',
@@ -206,6 +207,10 @@ export const profileToUser = (p) => ({
   companionsLimit: p.companions_limit || 8,
   journeyPhotoShape: p.journey_photo_shape || 'rounded',
   journeyBg: p.journey_bg || 'default',
+  journeyPhotoMat: p.journey_photo_mat || 'cream',
+  journeyTextScale: p.journey_text_scale || 'm',
+  journeyAccent: p.journey_accent || '',
+  coverUrl: p.journey_cover_url || null,
   ...journeyFieldsFromRow(p),
   tagPermission: p.tag_permission || 'anyone',
   links: Array.isArray(p.links) ? p.links : [],
@@ -299,6 +304,33 @@ export const getSessionUser = async () => {
   return hydrateUser(rowToSelfUser(data, authUser.email));
 };
 
+// ---- Internal admin / BI ---------------------------------------------------
+// Every call below is gated in the database by is_admin() (SECURITY DEFINER
+// functions + RLS), so a non-admin session simply gets an error — the browser
+// never holds any elevated key.
+export const adminOverview = async () => {
+  const { data, error } = await supabase.rpc('admin_overview');
+  if (error) throw new Error(error.message);
+  return data;
+};
+export const adminSignupsDaily = async (days = 30) => {
+  const { data, error } = await supabase.rpc('admin_signups_daily', { days });
+  if (error) throw new Error(error.message);
+  return data || [];
+};
+export const adminMembers = async () => {
+  const { data, error } = await supabase.rpc('admin_members');
+  if (error) throw new Error(error.message);
+  return data || [];
+};
+export const adminSetProfileFlags = async (userId, patch) => {
+  const { error } = await supabase.from('profiles').update(patch).eq('id', userId);
+  if (error) throw new Error(error.message);
+  await supabase.rpc('admin_log', {
+    p_action: 'set_flags', p_target_type: 'profile', p_target_id: userId, p_detail: patch,
+  });
+};
+
 export const logIn = async ({ email, password }) => {
   const { data, error } = await supabase.auth.signInWithPassword({
     email: email.trim().toLowerCase(),
@@ -313,7 +345,15 @@ export const logIn = async ({ email, password }) => {
     throw new Error('Invalid email or password.');
   }
   let { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle();
-  if (!profile) throw new Error('Could not load your profile.');
+  if (!profile) {
+    // Email-confirmed signups can't write their profile row until they have a
+    // session (RLS). If they finish by typing email + password here rather than
+    // via the auto session-restore on boot, the row still won't exist yet, so
+    // create it now instead of failing with "Could not load your profile."
+    const finished = await ensureProfileRow();
+    if (!finished) throw new Error('Could not load your profile.');
+    return finished;
+  }
   if (profile.banned) {
     await supabase.auth.signOut();
     throw new Error('This account has been suspended.');
@@ -424,6 +464,12 @@ export const updateProfile = async (userId, patch) => {
     next.avatarPhotos = await uploadPhotos(userId, patch.avatarPhotos);
     next.avatarUri = next.avatarPhotos[0] || null;
   }
+  // A freshly-picked Journey cover comes in as a File; upload it and store the
+  // URL. (coverUrl on its own passes through — an existing URL, or null to clear.)
+  if ('coverFile' in patch && patch.coverFile) {
+    next.coverUrl = (await uploadOnePhoto(userId, patch.coverFile)) || null;
+    delete next.coverFile;
+  }
   const dbPatch = {};
   const map = {
     name: 'name',
@@ -441,6 +487,10 @@ export const updateProfile = async (userId, patch) => {
     favoriteNumber: 'favorite_number',
     journeyBg: 'journey_bg',
     journeyPhotoShape: 'journey_photo_shape',
+    journeyPhotoMat: 'journey_photo_mat',
+    journeyTextScale: 'journey_text_scale',
+    journeyAccent: 'journey_accent',
+    coverUrl: 'journey_cover_url',
     locationFont: 'location_font',
     locationFontColor: 'location_font_color',
     titleFont: 'title_font',

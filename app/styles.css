@@ -210,6 +210,10 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 .settings-row .lbl .d { font-size: 0.85rem; color: var(--muted); }
 
 /* ============================ Monument header ============================ */
+/* The Journey cover — a book-cover banner above the monument. Full-bleed within
+   the content column; part of the owner's chosen look, shown to everyone. */
+.jcover { margin: 0 0 14px; border-radius: 14px; overflow: hidden; background: var(--line); box-shadow: 0 10px 30px rgba(20,30,50,0.14); }
+.jcover img { display: block; width: 100%; max-height: 260px; object-fit: cover; }
 .monument { text-align: center; padding: 12px 0 4px; }
 
 /* Photo + wheel ride side by side, vertically centered, at the top of the header. */
@@ -298,7 +302,10 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 .jchapter { text-align: center; margin: 60px 0 26px; position: relative; z-index: 1; }
 .jchapter:first-child { margin-top: 22px; }
 .jchapter .yr { font-family: var(--display); font-weight: 600; font-size: 4.2rem; line-height: 1; color: var(--j-blue); letter-spacing: 1px; position: relative; z-index: 1; }
-.jchapter .age { display: block; font-family: var(--hand); font-size: 1.5rem; color: var(--j-amber); margin-top: -2px; position: relative; z-index: 1; }
+.jchapter .age { display: block; font-family: var(--hand); font-size: 1.5rem; color: var(--jt-accent, var(--j-amber)); margin-top: -2px; position: relative; z-index: 1; }
+/* Decade chapters carry a short accent rule beneath the year — the printed-
+   memoir chapter divider, tinted by the Journey's accent color. */
+.jchapter.decade .yr::after { content: ''; display: block; width: 64px; height: 3px; margin: 12px auto 0; border-radius: 2px; background: var(--jt-accent, var(--j-amber)); opacity: 0.85; }
 .jchapter.decade::before { content: attr(data-decade); position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); font-family: var(--display); font-weight: 600; font-size: 8rem; color: rgba(27,75,143,0.05); letter-spacing: 6px; z-index: 0; pointer-events: none; white-space: nowrap; }
 
 /* Moment — an OPAQUE card; color signals solo vs companion. Opaque (not the
@@ -316,11 +323,14 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 .jmoment .jdate { font-family: var(--hand); font-size: 1.4rem; text-align: center; margin-bottom: 4px; }
 .jmoment.solo .jdate { color: var(--j-blue); }
 .jmoment.companion .jdate { color: var(--j-amber-deep); }
-.jmoment .jtitle { font-family: var(--jt-title-font, var(--display)); font-weight: 600; font-size: 2.2rem; line-height: 1.15; text-align: center; margin: 0 0 6px; color: var(--jt-title-color, var(--j-blue-deep)); }
-.jmoment .jcaption { font-family: var(--jt-caption-font, inherit); text-align: center; color: var(--jt-caption-color, var(--muted)); font-size: 1.12rem; font-style: italic; margin-bottom: 20px; }
+/* Moment text sizes scale with the owner's chosen reading size (--jt-text-scale,
+   default 1 = unchanged). */
+.jmoment .jtitle { font-family: var(--jt-title-font, var(--display)); font-weight: 600; font-size: calc(2.2rem * var(--jt-text-scale, 1)); line-height: 1.15; text-align: center; margin: 0 0 6px; color: var(--jt-title-color, var(--j-blue-deep)); }
+.jmoment .jcaption { font-family: var(--jt-caption-font, inherit); text-align: center; color: var(--jt-caption-color, var(--muted)); font-size: calc(1.12rem * var(--jt-text-scale, 1)); font-style: italic; margin-bottom: 20px; }
 
-/* Hero media — natural aspect, matted like a print */
-.jhero { background: var(--paper); padding: 10px; border-radius: 6px; box-shadow: 0 14px 44px rgba(27,75,143,0.14); border: 1px solid rgba(0,0,0,0.04); margin: 0 0 20px; }
+/* Hero media — natural aspect, matted like a print. The mat (background +
+   padding) follows the owner's chosen photo mat via --jt-mat-* (default cream). */
+.jhero { background: var(--jt-mat-color, var(--paper)); padding: var(--jt-mat-pad, 10px); padding-bottom: var(--jt-mat-bottom, 10px); border-radius: 6px; box-shadow: 0 14px 44px rgba(27,75,143,0.14); border: 1px solid rgba(0,0,0,0.04); margin: 0 0 20px; }
 /* A single photo sits a touch smaller than before (~80%), so it reads as a
    kept print rather than filling the screen. */
 .jhero.one { max-width: 80%; margin-left: auto; margin-right: auto; }
@@ -332,16 +342,20 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 .jcarousel {
   display: flex; gap: 12px; overflow-x: auto; margin: 0 0 20px; padding-bottom: 8px;
   scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+  cursor: grab; touch-action: pan-y;
 }
+.jcarousel.dragging { cursor: grabbing; scroll-snap-type: none; user-select: none; }
+.jcarousel.dragging img, .jcarousel.dragging video { pointer-events: none; }
+.jcarousel img { -webkit-user-drag: none; user-select: none; }
 .jslide {
-  flex: 0 0 72%; scroll-snap-align: start; background: var(--paper); padding: 8px;
+  flex: 0 0 72%; scroll-snap-align: start; background: var(--jt-mat-color, var(--paper)); padding: var(--jt-mat-pad, 8px); padding-bottom: var(--jt-mat-bottom, 8px);
   border-radius: 6px; box-shadow: 0 10px 30px rgba(27,75,143,0.12);
 }
 .jslide img, .jslide video { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; border-radius: 3px; }
 
 /* Story — book-like measure; drop-cap when text is the star */
-.jstory { font-family: var(--jt-story-font, inherit); font-size: 1.14rem; line-height: 1.85; color: var(--jt-story-color, var(--ink)); max-width: 56ch; margin: 0 auto 14px; white-space: pre-wrap; }
-.jmoment.text-only .jstory { font-size: 1.24rem; }
+.jstory { font-family: var(--jt-story-font, inherit); font-size: calc(1.14rem * var(--jt-text-scale, 1)); line-height: 1.85; color: var(--jt-story-color, var(--ink)); max-width: 56ch; margin: 0 auto 14px; white-space: pre-wrap; }
+.jmoment.text-only .jstory { font-size: calc(1.24rem * var(--jt-text-scale, 1)); }
 .jstory.drop::first-letter { font-family: var(--display); font-size: 3.4rem; font-weight: 600; float: left; line-height: 0.72; padding: 8px 10px 0 0; color: var(--j-amber-deep); }
 
 /* Voice note */
@@ -451,7 +465,7 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 
 /* ============================ Moment detail ============================= */
 .gallery-full { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin: 16px 0; }
-.gallery-full img { width: 100%; border-radius: 12px; border: 4px solid var(--paper); box-shadow: var(--shadow); }
+.gallery-full img { width: 100%; border-radius: var(--photo-radius, 12px); background: var(--jt-mat-color, var(--paper)); padding: var(--jt-mat-pad, 4px); padding-bottom: var(--jt-mat-bottom, 4px); box-sizing: border-box; box-shadow: var(--shadow); }
 .comment { padding: 13px 0; border-bottom: 1px solid var(--line); }
 .comment .who { font-weight: 600; color: var(--blue); font-size: 0.95rem; }
 .comment-tools { margin-top: 4px; }
@@ -608,6 +622,16 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 .pick-chip.sel { border-color: var(--blue); background: var(--blue); color: var(--gold); }
 .swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; padding: 0; }
 .swatch.sel { border: 3px solid var(--ink); }
+/* The "Auto" accent chip (follow favorite color) reads as a labeled swatch. */
+.swatch.auto { background: var(--paper); color: var(--muted); font-size: 0.72rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+
+/* Edit Journey — cover picker + photo-mat swatch previews. */
+.cover-edit { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.cover-prev { border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--paper); min-height: 96px; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.cover-prev img { display: block; width: 100%; max-height: 200px; object-fit: cover; }
+.cover-prev.empty { border-style: dashed; }
+.mat-prev { height: 44px; border-radius: 8px; margin-bottom: 6px; border: 1px solid rgba(0,0,0,0.08); display: flex; align-items: center; justify-content: center; }
+.mat-prev span { display: block; width: 46%; height: 46%; border-radius: 3px; background: #EFF3FA; box-shadow: 0 1px 4px rgba(20,30,50,0.25); }
 
 /* The fixed journey-theme backdrop layer — sits behind the whole journey; the
    opaque moment cards render above it (see .wrap.journeywide z-index). */
@@ -619,3 +643,36 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
   .monument h1 { font-size: 1.9rem; }
   .stats { gap: 10px; }
 }
+
+/* ---- Internal admin / BI dashboard ------------------------------------- */
+.admin-wrap { max-width: 920px; }
+.admin-title { font-size: 1.6rem; color: var(--blue); margin-bottom: 2px; }
+.admin-h2 { font-size: 1.15rem; color: var(--blue); margin: 26px 0 10px; }
+.admin-grid {
+  display: grid; gap: 12px; margin-top: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.admin-card {
+  background: var(--paper); border: 1px solid var(--line);
+  border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow-sm);
+}
+.admin-k { font-size: 0.82rem; color: var(--muted); font-weight: 600; letter-spacing: 0.01em; }
+.admin-v { font-size: 1.7rem; color: var(--ink); font-weight: 700; line-height: 1.1; margin-top: 2px; }
+.admin-sub { font-size: 0.82rem; color: var(--muted); margin-top: 4px; }
+
+.admin-tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; }
+.admin-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; min-width: 640px; }
+.admin-table th {
+  text-align: left; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--line); background: rgba(27,75,143,0.03);
+}
+.admin-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.admin-table tr:last-child td { border-bottom: none; }
+.admin-tog {
+  border: 1px solid var(--line-strong); background: var(--paper); color: var(--blue);
+  border-radius: 999px; padding: 4px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+}
+.admin-tog:hover { background: rgba(27,75,143,0.06); }
+.admin-tog.on { background: var(--blue); color: var(--cream); border-color: var(--blue); }
+.admin-tog[data-field="banned"].on { background: var(--danger); border-color: var(--danger); color: #fff; }
+.admin-tog[disabled] { opacity: 0.4; cursor: not-allowed; }

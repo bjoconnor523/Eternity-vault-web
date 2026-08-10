@@ -89,6 +89,29 @@ const STYLE_FIELDS = [
 const fontCss = (key) => (FONTS.find((f) => f.key === key) || FONTS[0]).css;
 const fontColorHex = (key) => (!key || key === 'default') ? '' : (FONT_COLORS.find((c) => c.key === key) || {}).color || '';
 
+// Photo mat / frame around a moment's photo, mirrored from mobile journeyTheme.js
+// (PHOTO_MATS). Painted via CSS vars on the timeline host so busy patterns and
+// mats only ever touch the photo, never the text. 'cream' is the default.
+const PHOTO_MATS = [
+  { key: 'cream', label: 'Cream', color: '#FBF7EC', pad: 10, bottom: 10 },
+  { key: 'white', label: 'White', color: '#FFFFFF', pad: 10, bottom: 10 },
+  { key: 'black', label: 'Black', color: '#171717', pad: 10, bottom: 10 },
+  { key: 'polaroid', label: 'Polaroid', color: '#FFFFFF', pad: 12, bottom: 34 },
+  { key: 'none', label: 'None', color: 'transparent', pad: 0, bottom: 0 },
+];
+const photoMat = (key) => PHOTO_MATS.find((m) => m.key === key) || PHOTO_MATS[0];
+// Reading text size for moment words (TEXT_SCALES). 'm' is 1.0 (unchanged).
+const TEXT_SCALES = [
+  { key: 's', label: 'Compact', scale: 0.92 },
+  { key: 'm', label: 'Standard', scale: 1 },
+  { key: 'l', label: 'Large', scale: 1.15 },
+];
+const textScaleVal = (key) => (TEXT_SCALES.find((t) => t.key === key) || TEXT_SCALES[1]).scale;
+// The Journey accent (thread/chapter chrome). Chosen accent → favorite color →
+// brand gold. Only paints decorative chrome, so any color is safe.
+const ACCENT_DEFAULT = '#FFC93C';
+const journeyAccentOf = (owner) => owner?.journeyAccent || owner?.favoriteColor || ACCENT_DEFAULT;
+
 // ---- Generative journey backdrops (ported from mobile JourneyBackdrop.js) --
 // Each returns the inner SVG for a fixed 400x800 viewBox, sliced to cover. A
 // per-call unique suffix keeps gradient IDs from colliding when many previews
@@ -268,6 +291,13 @@ function applyThemeVars(host, owner) {
     set(`--jt-${f.key}-font`, fontCss(owner?.[`${f.key}Font`]));
     set(`--jt-${f.key}-color`, fontColorHex(owner?.[`${f.key}FontColor`]));
   }
+  // Journey-wide look: photo mat, reading text size, and accent chrome.
+  const mat = photoMat(owner?.journeyPhotoMat);
+  host.style.setProperty('--jt-mat-color', mat.key === 'none' ? 'transparent' : mat.color);
+  host.style.setProperty('--jt-mat-pad', `${mat.pad}px`);
+  host.style.setProperty('--jt-mat-bottom', `${mat.bottom}px`);
+  host.style.setProperty('--jt-text-scale', String(textScaleVal(owner?.journeyTextScale)));
+  host.style.setProperty('--jt-accent', journeyAccentOf(owner));
 }
 
 // Merch catalog — mirrors the app's lib/merch.js. Prices in one place.
@@ -592,6 +622,7 @@ function monumentHTML(u, moments, circleCount, isSelf) {
   const photoInner = photo ? `<img class="mp-img" src="${esc(photo)}" alt="">` : `<div class="mp-ph">${esc(initials(u.name))}</div>`;
   const wheel = wheelSvg(u);
   return `
+    ${u.coverUrl ? `<div class="jcover"><img src="${esc(u.coverUrl)}" alt=""></div>` : ''}
     <div class="monument">
       <div class="monument-top">
         <div class="monument-photo">${photoInner}</div>
@@ -1061,15 +1092,15 @@ async function viewMoment(id) {
   const loc = placeLabel(m);
   const photosHTML = (m.photos || []).length ? `<div class="gallery-full">${m.photos.map((p) => `<img src="${esc(p)}" loading="lazy" alt="">`).join('')}</div>` : '';
   root().innerHTML = `
-    <div class="wrap">
+    <div class="wrap" id="moment-detail">
       <a class="back" href="${isOwner ? '#/journey' : `#/u/${esc(owner?.handle || '')}`}">← Back</a>
       <div class="datetab" style="font-size:1.4rem">${esc(fullDate(m))}</div>
       <div class="panel" style="border-top-left-radius:0;">
         ${owner ? `<div class="muted" style="margin-bottom:8px;">A moment from <a href="#/u/${esc(owner.handle)}">${esc(owner.name)}</a>${m.milestone && MILESTONE_ICON[m.milestone] ? ' · ' + MILESTONE_ICON[m.milestone] : ''}</div>` : ''}
-        ${m.title ? `<h1 style="color:var(--blue);margin:0 0 6px;">${esc(m.title)}</h1>` : ''}
-        ${m.caption ? `<div style="font-size:1.12rem;color:var(--muted);">${esc(m.caption)}</div>` : ''}
+        ${m.title ? `<h1 style="color:var(--blue);margin:0 0 6px;font-size:calc(2rem * var(--jt-text-scale,1));">${esc(m.title)}</h1>` : ''}
+        ${m.caption ? `<div style="font-size:calc(1.12rem * var(--jt-text-scale,1));color:var(--muted);">${esc(m.caption)}</div>` : ''}
         ${photosHTML}
-        ${m.story ? `<p style="white-space:pre-wrap;margin-top:14px;font-size:1.08rem;">${esc(m.story)}</p>` : ''}
+        ${m.story ? `<p style="white-space:pre-wrap;margin-top:14px;font-size:calc(1.08rem * var(--jt-text-scale,1));">${esc(m.story)}</p>` : ''}
         ${m.audioUrl ? `<audio controls src="${esc(m.audioUrl)}" style="width:100%;margin-top:12px;"></audio>` : ''}
         ${loc ? `<div class="m-loc" style="color:var(--muted);margin-top:12px;">📍 ${m.placeLat ? `<a href="https://maps.google.com/?q=${m.placeLat},${m.placeLng}" target="_blank" rel="noopener">${esc(loc)}</a>` : esc(loc)}</div>` : ''}
         ${(m.tags || []).length ? `<div class="tags" style="margin-top:14px;">${m.tags.map((t) => `<span class="tag witnessed" style="background:${t.confirmed ? 'var(--gold)' : 'rgba(27,75,143,0.1)'};color:var(--blue-deep)">${t.confirmed ? '✓ ' : ''}${esc(t.label)}</span>`).join('')}</div>` : ''}
@@ -1094,6 +1125,13 @@ async function viewMoment(id) {
       <div id="comments">${comments.length ? comments.map((c) => `<div class="comment"><span class="who">${esc(c.name)}</span>${c.pinned ? ' 📌' : ''}<span class="when">${timeAgo(c.createdAt)}</span><div>${esc(c.text)}</div>${(isOwner || c.userId === state.user.id) ? `<div class="comment-tools">${isOwner ? `<button class="linkbtn" data-pin="${esc(c.id)}" data-pinned="${c.pinned ? 1 : 0}">${c.pinned ? 'Unpin' : 'Pin'}</button>` : ''}<button class="linkbtn" data-delc="${esc(c.id)}">Delete</button></div>` : ''}</div>`).join('') : '<div class="muted">No comments yet.</div>'}</div>
       ${appFooter()}
     </div>`;
+  // The opened moment inherits its Journey's look — reading text size, photo mat,
+  // and photo shape — so it matches the tree it came from.
+  const mdHost = el('moment-detail');
+  if (mdHost) {
+    applyThemeVars(mdHost, owner);
+    mdHost.style.setProperty('--photo-radius', (PHOTO_SHAPES.find((s) => s.key === owner?.journeyPhotoShape) || PHOTO_SHAPES[0]).r);
+  }
   if (isOwner && !frozen) {
     const del = $('#del-moment');
     if (del) del.onclick = async () => { if (!confirm('Delete this moment? This cannot be undone.')) return; await api.deleteMemory(m.id); nav('#/journey'); };
@@ -1481,8 +1519,9 @@ async function viewMyProfile() {
         ${menuRow('#/merch', '🛍️', 'Order Memories')}
         ${menuRow('#/orders', '📦', 'My Orders')}
         ${menuRow('#/settings', '⚙️', 'Account & Settings')}
+        ${u.isAdmin ? menuRow('#/admin', '📊', 'Admin Dashboard') : ''}
       </div>
-      ${u.isModerator ? '<p class="muted" style="text-align:center;margin-top:18px;font-size:0.88rem;">Moderation tools are coming to the web soon.</p>' : ''}
+      ${u.isModerator && !u.isAdmin ? '<p class="muted" style="text-align:center;margin-top:18px;font-size:0.88rem;">Moderation tools are coming to the web soon.</p>' : ''}
       ${appFooter()}
     </div>`;
   startAvatarRotation(state.user);
@@ -1528,11 +1567,31 @@ async function viewCustomize() {
       <p class="muted" style="margin-top:-4px;">The look and feel of your Journey — its backdrop, photo shape, and the default fonts &amp; colors for every moment.</p>
       <div id="cust-msg"></div>
 
+      <div class="section-title" style="font-size:1.15rem;">Cover</div>
+      <p class="muted" style="margin-top:-4px;font-size:0.9rem;">A banner across the top of your Journey — like the cover of a book.</p>
+      <div class="cover-edit">
+        <div class="cover-prev ${u.coverUrl ? '' : 'empty'}">${u.coverUrl ? `<img src="${esc(u.coverUrl)}" alt="">` : 'No cover yet'}</div>
+        <div class="btn-row" style="justify-content:flex-start;">
+          <label class="btn ghost sm">${u.coverUrl ? 'Change cover' : 'Add a cover photo'}<input type="file" id="cover-file" accept="image/*" hidden></label>
+          ${u.coverUrl ? '<button class="btn ghost sm" id="cover-remove">Remove</button>' : ''}
+        </div>
+      </div>
+
       <div class="section-title" style="font-size:1.15rem;">Background</div>
       <div class="theme-grid wide" id="bg-grid">${BG_THEMES.map((b) => `<div class="theme-sw big ${u.journeyBg === b.key ? 'sel' : ''}" data-bg="${b.key}"><div class="sw-prev ${b.dark ? 'dark' : ''}" style="background:${b.color}">${backdropSVG(b.kind)}</div><div class="tn">${b.label}</div></div>`).join('')}</div>
 
       <div class="section-title" style="font-size:1.15rem;">Photo shape</div>
       <div class="theme-grid" id="shape-grid">${PHOTO_SHAPES.map((s) => `<div class="theme-sw ${u.journeyPhotoShape === s.key ? 'sel' : ''}" data-shape="${s.key}"><div class="dot" style="background:var(--blue);border-radius:${s.r}"></div><div class="tn">${s.label}</div></div>`).join('')}</div>
+
+      <div class="section-title" style="font-size:1.15rem;">Photo mat</div>
+      <div class="theme-grid" id="mat-grid">${PHOTO_MATS.map((m) => `<div class="theme-sw ${(u.journeyPhotoMat || 'cream') === m.key ? 'sel' : ''}" data-mat="${m.key}"><div class="mat-prev" style="background:${m.color === 'transparent' ? 'var(--line)' : m.color}"><span></span></div><div class="tn">${m.label}</div></div>`).join('')}</div>
+
+      <div class="section-title" style="font-size:1.15rem;">Reading text size</div>
+      <div class="pick-row" id="scale-row">${TEXT_SCALES.map((t) => `<button type="button" class="pick-chip ${(u.journeyTextScale || 'm') === t.key ? 'sel' : ''}" data-scale="${t.key}" style="font-size:${t.scale}em">${t.label}</button>`).join('')}</div>
+
+      <div class="section-title" style="font-size:1.15rem;">Accent color</div>
+      <p class="muted" style="margin-top:-4px;font-size:0.9rem;">Tints the thread, chapter markers, and small details. “Auto” follows your favorite color.</p>
+      <div class="pick-row swatches" id="accent-row"><button type="button" class="swatch auto ${u.journeyAccent ? '' : 'sel'}" data-accent="" title="Auto">A</button>${FAVORITE_COLORS.map((hex) => `<button type="button" class="swatch ${u.journeyAccent === hex ? 'sel' : ''}" data-accent="${hex}" title="${hex}" style="background:${hex}"></button>`).join('')}</div>
 
       <div class="section-title" style="font-size:1.15rem;">Default fonts &amp; colors</div>
       <p class="muted" style="margin-top:-4px;font-size:0.9rem;">These set the look for every moment. Pick “Classic” / “Blue” to leave a field on its default.</p>
@@ -1543,6 +1602,12 @@ async function viewCustomize() {
     try { await api.updateProfile(u.id, { [field]: val }); state.user[field] = val; $('#cust-msg').innerHTML = '<div class="success">Saved.</div>'; }
     catch (err) { $('#cust-msg').innerHTML = `<div class="error">${esc(err.message)}</div>`; }
   };
+  // For changes whose saved value we only learn from the server (a cover upload
+  // returns its stored URL): merge the returned fields back into state.user.
+  const savePatch = async (patch) => {
+    try { const next = await api.updateProfile(u.id, patch); Object.assign(state.user, next); $('#cust-msg').innerHTML = '<div class="success">Saved.</div>'; return next; }
+    catch (err) { $('#cust-msg').innerHTML = `<div class="error">${esc(err.message)}</div>`; }
+  };
   const wire = (gridId, attr, field) =>
     root().querySelectorAll(`#${gridId} .theme-sw`).forEach((sw) => (sw.onclick = () => {
       root().querySelectorAll(`#${gridId} .theme-sw`).forEach((x) => x.classList.remove('sel'));
@@ -1551,6 +1616,31 @@ async function viewCustomize() {
     }));
   wire('bg-grid', 'data-bg', 'journeyBg');
   wire('shape-grid', 'data-shape', 'journeyPhotoShape');
+  wire('mat-grid', 'data-mat', 'journeyPhotoMat');
+
+  // Cover: upload a fresh file, or clear it — then re-render this screen.
+  const coverFile = $('#cover-file');
+  if (coverFile) coverFile.onchange = async () => {
+    const f = coverFile.files?.[0];
+    if (!f) return;
+    $('#cust-msg').innerHTML = '<div class="muted">Uploading…</div>';
+    await savePatch({ coverFile: f });
+    viewCustomize();
+  };
+  const coverRemove = $('#cover-remove');
+  if (coverRemove) coverRemove.onclick = async () => { await savePatch({ coverUrl: null }); viewCustomize(); };
+
+  // Reading text size + accent (chip / swatch rows).
+  root().querySelectorAll('#scale-row .pick-chip').forEach((chip) => (chip.onclick = () => {
+    root().querySelectorAll('#scale-row .pick-chip').forEach((x) => x.classList.remove('sel'));
+    chip.classList.add('sel');
+    save('journeyTextScale', chip.getAttribute('data-scale'));
+  }));
+  root().querySelectorAll('#accent-row .swatch').forEach((sw) => (sw.onclick = () => {
+    root().querySelectorAll('#accent-row .swatch').forEach((x) => x.classList.remove('sel'));
+    sw.classList.add('sel');
+    save('journeyAccent', sw.getAttribute('data-accent'));
+  }));
   root().querySelectorAll('[data-font-field]').forEach((row) => {
     const field = row.getAttribute('data-font-field');
     row.querySelectorAll('.pick-chip').forEach((chip) => (chip.onclick = () => {
@@ -2246,6 +2336,105 @@ function openDeleteFlow() {
 }
 
 // ---- Router ----------------------------------------------------------------
+// ---- Internal admin / BI dashboard (admins only) ---------------------------
+const fmtNum = (n) => (n == null ? '—' : Number(n).toLocaleString());
+
+function signupSparkline(rows) {
+  const data = (rows || []).map((r) => Number(r.signups) || 0);
+  if (!data.length) return '';
+  const w = 640, h = 60, max = Math.max(1, ...data);
+  const step = data.length > 1 ? w / (data.length - 1) : w;
+  const pts = data.map((v, i) => `${(i * step).toFixed(1)},${(h - (v / max) * (h - 8) - 4).toFixed(1)}`);
+  const total = data.reduce((a, b) => a + b, 0);
+  return `
+    <div class="admin-card" style="grid-column:1/-1;">
+      <div class="admin-k">Signups · last ${data.length} days <span class="muted" style="font-weight:400;">(${total} total)</span></div>
+      <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:60px;margin-top:6px;">
+        <polyline fill="none" stroke="var(--blue,#1B4B8F)" stroke-width="2"
+          points="${pts.join(' ')}" vector-effect="non-scaling-stroke"/>
+      </svg>
+    </div>`;
+}
+
+async function viewAdmin() {
+  if (!state.user?.isAdmin) { nav('#/profile'); return; }
+  setLoading();
+  let o, signups, members;
+  try {
+    [o, signups, members] = await Promise.all([
+      api.adminOverview(), api.adminSignupsDaily(30), api.adminMembers(),
+    ]);
+  } catch (e) {
+    root().innerHTML = `<div class="wrap"><a class="back" href="#/profile">← Back</a>
+      <div class="error">Couldn't load the dashboard: ${esc(e.message)}</div></div>`;
+    return;
+  }
+
+  const card = (k, v, sub) =>
+    `<div class="admin-card"><div class="admin-k">${k}</div><div class="admin-v">${v}</div>${sub ? `<div class="admin-sub">${sub}</div>` : ''}</div>`;
+  const orders = o.orders_by_status || {};
+  const ordersLine = Object.keys(orders).length
+    ? Object.entries(orders).map(([k, v]) => `${esc(k.replace(/_/g, ' '))}: <b>${v}</b>`).join(' · ')
+    : 'none yet';
+
+  const roleBtn = (m, field, label) => {
+    const on = m[field];
+    const isSelf = m.id === state.user.id;
+    return `<button class="admin-tog ${on ? 'on' : ''}" data-id="${m.id}" data-field="${field}" data-val="${on ? '0' : '1'}"
+      ${isSelf && field !== 'banned' ? 'disabled title="Cannot change your own role"' : ''}>${label}${on ? ' ✓' : ''}</button>`;
+  };
+
+  const rows = (members || []).map((m) => `
+    <tr>
+      <td><b>${esc(m.name || '')}</b><br><span class="muted">@${esc(m.handle)}</span></td>
+      <td>${m.account_type === 'business' ? '🏢' : '👤'} ${m.memorial_state === 'sealed' ? '· 🔒' : ''}</td>
+      <td style="text-align:right;">${fmtNum(m.moments)}</td>
+      <td>${roleBtn(m, 'is_admin', 'Admin')}</td>
+      <td>${roleBtn(m, 'is_moderator', 'Mod')}</td>
+      <td>${roleBtn(m, 'banned', m.banned ? 'Banned' : 'Ban')}</td>
+    </tr>`).join('');
+
+  root().innerHTML = `
+    <div class="wrap admin-wrap">
+      <a class="back" href="#/profile">← Back</a>
+      <h1 class="admin-title">Internal Dashboard</h1>
+      <p class="muted" style="margin-top:-6px;">Owner &amp; moderator view · every role change is logged.</p>
+
+      <div class="admin-grid">
+        ${card('Members', fmtNum(o.users_total), `${fmtNum(o.users_personal)} people · ${fmtNum(o.users_business)} businesses`)}
+        ${card('Toward 100k', (o.goal_pct ?? 0) + '%', `${fmtNum(o.signups_7d)} new this week`)}
+        ${card('Moments', fmtNum(o.moments_total), `${fmtNum(o.moments_30d)} in 30 days · avg ${o.avg_moments}/journey`)}
+        ${card('Circle links', fmtNum(o.circle_links), `${fmtNum(o.tags_confirmed)} witnessed · ${fmtNum(o.tags_unconfirmed)} remembered`)}
+        ${card('Legacy', `${fmtNum(o.sealed_journeys)} sealed`, `${fmtNum(o.memorial_pending)} in grace · ${o.keeper_pct}% have a Keeper`)}
+        ${card('Store', `${fmtNum(o.spotlight_pending)} Spotlight`, `awaiting your review · orders — ${ordersLine}`)}
+        ${card('Safety', `${fmtNum(o.reports_open)} reports`, `${fmtNum(o.banned)} banned`)}
+        ${signupSparkline(signups)}
+      </div>
+
+      <h2 class="admin-h2">Members &amp; roles</h2>
+      <div class="admin-tablewrap">
+        <table class="admin-table">
+          <thead><tr><th>Member</th><th>Type</th><th style="text-align:right;">Moments</th><th>Admin</th><th>Mod</th><th>Status</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      ${appFooter()}
+    </div>`;
+
+  root().querySelectorAll('.admin-tog:not([disabled])').forEach((b) => {
+    b.onclick = async () => {
+      const field = b.getAttribute('data-field');
+      const val = b.getAttribute('data-val') === '1';
+      if (field === 'banned' && val && !confirm('Ban this member? They are signed out and their content hidden.')) return;
+      b.disabled = true;
+      try {
+        await api.adminSetProfileFlags(b.getAttribute('data-id'), { [field]: val });
+        await viewAdmin();
+      } catch (e) { alert(e.message); b.disabled = false; }
+    };
+  });
+}
+
 async function route() {
   const hash = location.hash || '#/journey';
   const parts = hash.replace(/^#\//, '').split('/');
@@ -2269,6 +2458,7 @@ async function route() {
       case 'circle': await viewCircle(); break;
       case 'notifications': await viewNotifications(); break;
       case 'settings': await viewSettings(); break;
+      case 'admin': await viewAdmin(); break;
       case 'import': await viewImport(); break;
       case 'shared': await viewShared(); break;
       case 'merch': parts[1] ? await viewMerchProduct(parts[1]) : await viewMerch(); break;
@@ -2315,7 +2505,47 @@ async function boot() {
     if (u) await loadBlocked();
   } catch (e) { console.warn('Boot failed', e); }
   window.addEventListener('hashchange', route);
+  enableCarouselDrag();
   if (!recovery) route();
+}
+
+// Grab-and-slide the photo strip itself (not just the scrollbar). Delegated so
+// it covers every .jcarousel, including ones added later by re-renders.
+function enableCarouselDrag() {
+  let strip = null, startX = 0, startScroll = 0, dragging = false, moved = 0;
+  document.addEventListener('pointerdown', (e) => {
+    const el = e.target.closest && e.target.closest('.jcarousel');
+    if (!el) return;
+    // Let links/buttons inside a slide still work.
+    strip = el; startX = e.clientX; startScroll = el.scrollLeft;
+    dragging = true; moved = 0;
+  });
+  document.addEventListener('pointermove', (e) => {
+    if (!dragging || !strip) return;
+    const dx = e.clientX - startX;
+    if (Math.abs(dx) > 3) {
+      moved = Math.abs(dx);
+      strip.scrollLeft = startScroll - dx;
+      strip.classList.add('dragging');
+      if (strip.setPointerCapture && e.pointerId != null) {
+        try { strip.setPointerCapture(e.pointerId); } catch {}
+      }
+      e.preventDefault();
+    }
+  });
+  const end = () => {
+    if (strip) strip.classList.remove('dragging');
+    dragging = false; strip = null;
+  };
+  document.addEventListener('pointerup', end);
+  document.addEventListener('pointercancel', end);
+  // Swallow the click that follows a real drag so a slide's tap target
+  // doesn't fire after you were only scrolling.
+  document.addEventListener('click', (e) => {
+    if (moved > 4 && e.target.closest && e.target.closest('.jcarousel')) {
+      e.stopPropagation(); e.preventDefault(); moved = 0;
+    }
+  }, true);
 }
 
 boot();
