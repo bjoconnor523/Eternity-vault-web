@@ -893,10 +893,23 @@ async function viewPerson(handle) {
     </div>`;
   if (moments.length) { mountFilteredTimeline('pv-host', 'pv-chips', moments, u); wireJumpNav(moments); }
   startAvatarRotation(u);
+  // Toggle Circle membership IN PLACE — updating just the button (and the
+  // Circle stat) instead of re-rendering the whole page, which would reset the
+  // scroll position back to the top.
+  let inCircleNow = inCircle;
   $('#circle-btn').onclick = async () => {
     const btn = $('#circle-btn'); btn.disabled = true;
-    try { inCircle ? await api.removeFromCircle(state.user.id, u.id) : await api.addToCircle(state.user, u.id); viewPerson(handle); }
-    catch (e) { btn.disabled = false; alert(e.message); }
+    try {
+      if (inCircleNow) await api.removeFromCircle(state.user.id, u.id);
+      else await api.addToCircle(state.user, u.id);
+      inCircleNow = !inCircleNow;
+      btn.textContent = inCircleNow ? 'In your Circle ✓' : '+ Add to Circle';
+      btn.classList.toggle('ghost', inCircleNow);
+      // Keep their Circle count (3rd monument stat) in sync without a reload.
+      const countEl = root().querySelectorAll('.monument .stat .n')[2];
+      if (countEl) { const n = parseInt(countEl.textContent, 10); if (!Number.isNaN(n)) countEl.textContent = String(Math.max(0, n + (inCircleNow ? 1 : -1))); }
+    } catch (e) { alert(e.message); }
+    finally { btn.disabled = false; }
   };
   $('#share-btn').onclick = () => openShareModal(u, 'send');
   $('#report-btn').onclick = () => openReport({ reportedUserId: u.id, label: `@${u.handle}` });
