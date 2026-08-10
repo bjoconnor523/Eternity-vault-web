@@ -291,9 +291,15 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
   --j-blue: #3A5A88; --j-blue-deep: #2C466B; --j-amber: #B8923F; --j-amber-deep: #9A7A31; --display: 'Cormorant Garamond', Georgia, serif;
 }
 .journey { max-width: 640px; margin: 0 auto; position: relative; }
-/* The central thread (white ribbon + coiling blue helix) runs the full height. */
-.spine { position: absolute; top: 0; bottom: 0; left: 50%; width: 14px; transform: translateX(-50%); z-index: 0; }
-.spine svg { display: block; width: 14px; height: 100%; }
+/* The central thread runs the full height; its style is the owner's choice
+   (ribbon/thread/rope/beads/stitch/vine — see lineSvg). The lane is a touch
+   wider than the drawn thread so a leafy Vine has room. */
+.spine { position: absolute; top: 0; bottom: 0; left: 50%; width: 18px; transform: translateX(-50%); z-index: 0; }
+.spine svg { display: block; width: 18px; height: 100%; }
+/* A line-style preview in the Edit Journey picker: the real thread painted down
+   a small cream tile. */
+.line-prev { height: 58px; display: flex; align-items: center; justify-content: center; background: var(--cream-deep); border-radius: 10px; overflow: hidden; }
+.line-prev svg { width: 18px; height: 100%; display: block; }
 /* The journey begins and ends IN the mark, so the thread never dangles. */
 .cap { text-align: center; position: relative; z-index: 2; margin: 4px 0; }
 .cap img { width: 40px; height: 40px; background: var(--cream); border-radius: 50%; padding: 3px; box-shadow: 0 2px 10px rgba(27,75,143,0.12); }
@@ -462,6 +468,48 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 .trending .pfp img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
 .trending .nm { font-size: 0.82rem; color: var(--blue); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trending .vc { font-size: 0.72rem; color: var(--muted); }
+
+/* Horizontal discovery strips (On this day / Places) */
+.hstrip { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 16px; }
+
+/* On this day, across lives */
+.otd-card { flex: 0 0 auto; width: 168px; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; cursor: pointer; box-shadow: var(--shadow-sm); transition: border-color 0.12s ease, transform 0.06s ease; }
+.otd-card:hover { border-color: var(--blue); transform: translateY(-1px); }
+.otd-photo { width: 100%; height: 108px; background: var(--cream-deep); }
+.otd-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.otd-photo-empty { display: flex; align-items: center; justify-content: center; font-family: var(--display); font-size: 1.6rem; font-weight: 700; color: var(--blue); }
+.otd-b { padding: 9px 11px 11px; }
+.otd-ago { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--blue); }
+.otd-t { font-weight: 600; color: var(--ink); font-size: 0.92rem; margin-top: 3px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.otd-w { font-size: 0.76rem; color: var(--muted); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Featured life of the week */
+.feat { background: var(--paper); border: 1px solid var(--gold); border-radius: 16px; padding: 18px 20px; margin: 4px 0 20px; cursor: pointer; box-shadow: var(--shadow-sm); transition: transform 0.1s ease, box-shadow 0.2s ease; }
+.feat:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.feat-top { display: flex; align-items: center; gap: 14px; }
+.feat-pfp { width: 60px; height: 60px; border-radius: 50%; flex: 0 0 auto; background: var(--cream-deep); color: var(--blue); font-weight: 700; font-size: 1.3rem; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 2px solid var(--gold); }
+.feat-pfp img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.feat-id { min-width: 0; }
+.feat-name { font-family: var(--display); font-size: 1.5rem; font-weight: 600; color: var(--blue); line-height: 1.1; }
+.feat-hd { font-size: 0.86rem; color: var(--muted); }
+.feat-epi { font-family: var(--display); font-style: italic; color: var(--ink); font-size: 1.05rem; line-height: 1.4; margin-top: 12px; }
+.feat-strip { display: flex; gap: 8px; overflow-x: auto; margin-top: 14px; padding-bottom: 4px; }
+.feat-strip img { width: 88px; height: 88px; flex: 0 0 auto; border-radius: 9px; object-fit: cover; }
+.feat-foot { font-size: 0.82rem; color: var(--muted); margin-top: 12px; }
+
+/* Places near you / top cities */
+.place-card { flex: 0 0 auto; width: 148px; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; cursor: pointer; box-shadow: var(--shadow-sm); transition: border-color 0.12s ease, transform 0.06s ease; }
+.place-card:hover { border-color: var(--blue); transform: translateY(-1px); }
+.pc-photo { width: 100%; height: 96px; background: var(--cream-deep); }
+.pc-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pc-photo-empty { display: flex; align-items: center; justify-content: center; font-size: 1.7rem; }
+.pc-b { padding: 9px 11px 11px; }
+.pc-city { font-weight: 600; color: var(--blue); font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-meta { font-size: 0.76rem; color: var(--muted); margin-top: 2px; }
+
+/* Place detail row thumbnail */
+.feed-thumb.sm { width: 48px; height: 48px; border-radius: 10px; background: var(--cream-deep); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; }
+.feed-thumb.sm img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; }
 
 /* ============================ Moment detail ============================= */
 .gallery-full { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin: 16px 0; }

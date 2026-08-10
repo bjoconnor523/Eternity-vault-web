@@ -648,24 +648,64 @@ function monumentHTML(u, moments, circleCount, isSelf) {
 const isVideoUrl = (u) => /\.(mp4|mov|webm|m4v)(\?|$)/i.test(u || '');
 const mediaTag = (url) => (isVideoUrl(url) ? `<video src="${esc(url)}" controls preload="metadata"></video>` : `<img src="${esc(url)}" loading="lazy" alt="">`);
 
-// The iconic central thread: a white ribbon "spine" with blue dots coiling
-// around it like a helix — a snake around a sword. One SVG pattern period tiles
-// seamlessly down the whole journey, any length. Ported from the app's
-// HelixStitch (components/journey.js): near side of each wrap is bigger + bolder,
-// far side smaller + fainter, so it reads as wrapping AROUND the thread.
-const HELIX_PERIOD = 40, HELIX_DOTS = 8, HELIX_INNER = 11;
-function helixSvg() {
-  const dots = Array.from({ length: HELIX_DOTS }, (_, i) => {
-    const t = (i / HELIX_DOTS) * Math.PI * 2;
-    const along = ((i + 0.5) / HELIX_DOTS) * HELIX_PERIOD;
-    const across = HELIX_INNER / 2 + Math.sin(t) * (HELIX_INNER / 2 - 1.2);
-    const depth = (Math.cos(t) + 1) / 2; // 1 = front of the coil, 0 = behind
-    return `<circle cx="${(across + 1.5).toFixed(2)}" cy="${along.toFixed(2)}" r="${(0.9 + depth * 0.9).toFixed(2)}" fill="#1B4B8F" opacity="${(0.28 + depth * 0.55).toFixed(2)}"/>`;
+// The central thread — the vertical journey "line". It was the format's one
+// locked, iconic element (a white ribbon with a blue helix coiling around it,
+// like a snake around a sword) until Brandon opened it to customization on
+// 2026-08-10. Each style tiles one SVG pattern period seamlessly down the whole
+// journey, any length. Kept in lockstep with the mobile renderer (ThreadPaint /
+// resolveLine in components/journey.js + lib/journeyTheme.js). The month/year
+// date tabs stay fixed — only the line is customizable.
+const JOURNEY_LINES = [
+  { key: 'ribbon', label: 'Ribbon' },
+  { key: 'thread', label: 'Thread' },
+  { key: 'rope', label: 'Rope' },
+  { key: 'beads', label: 'Beads' },
+  { key: 'stitch', label: 'Stitched' },
+  { key: 'vine', label: 'Vine' },
+];
+const LINE_W = 18, LINE_CX = 9;
+// One period of a vertical sine as an SVG path string, centered on cx; starts
+// and ends at cx with matching slope so pattern tiles join into a smooth wave.
+function lineWave(cx, amp, period, phase) {
+  let d = '';
+  for (let y = 0; y <= period; y += 3) {
+    const x = cx + Math.sin((y / period) * Math.PI * 2 + phase) * amp;
+    d += (y === 0 ? 'M' : 'L') + x.toFixed(2) + ' ' + y + ' ';
+  }
+  return d.trim();
+}
+function lineLeaf(cx, y, side) {
+  const x = cx + Math.sin((y / 48) * Math.PI * 2) * 5;
+  const lx = x + side * 2;
+  return `<ellipse cx="${lx.toFixed(2)}" cy="${y}" rx="6" ry="3.2" fill="#6FA24A" transform="rotate(${side * 32} ${lx.toFixed(2)} ${y})"/>`;
+}
+// The SVG for the owner's chosen line style, tinted by their accent where the
+// style is color-led (thread/beads/stitch). `uid` keeps pattern ids unique when
+// several previews render on one page (the Edit Journey picker).
+function lineSvg(owner, uid = '') {
+  const key = (owner && owner.journeyLine) || 'ribbon';
+  const a = journeyAccentOf(owner);
+  const id = 'jl' + uid;
+  const open = `<svg width="${LINE_W}" height="100%" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">`;
+  if (key === 'thread')
+    return `${open}<rect x="${LINE_CX - 1.5}" width="3" height="100%" rx="1.5" fill="${a}"/></svg>`;
+  if (key === 'rope')
+    return `${open}<defs><pattern id="${id}" patternUnits="userSpaceOnUse" width="${LINE_W}" height="18"><path d="${lineWave(LINE_CX, 4, 18, 0)}" stroke="#B98A3C" stroke-width="3.4" fill="none"/><path d="${lineWave(LINE_CX, 4, 18, Math.PI)}" stroke="#7E5B2C" stroke-width="3.4" fill="none"/></pattern></defs><rect width="${LINE_W}" height="100%" fill="url(#${id})"/></svg>`;
+  if (key === 'beads')
+    return `${open}<defs><pattern id="${id}" patternUnits="userSpaceOnUse" width="${LINE_W}" height="22"><circle cx="${LINE_CX}" cy="11" r="5" fill="${a}" stroke="#FBF3DA" stroke-width="1.5"/></pattern></defs><rect x="${LINE_CX - 1}" width="2" height="100%" fill="#D9C79A"/><rect width="${LINE_W}" height="100%" fill="url(#${id})"/></svg>`;
+  if (key === 'stitch')
+    return `${open}<defs><pattern id="${id}" patternUnits="userSpaceOnUse" width="${LINE_W}" height="16"><rect x="${LINE_CX - 1.5}" y="0" width="3" height="9" rx="1.5" fill="${a}"/></pattern></defs><rect width="${LINE_W}" height="100%" fill="url(#${id})"/></svg>`;
+  if (key === 'vine')
+    return `${open}<defs><pattern id="${id}" patternUnits="userSpaceOnUse" width="${LINE_W}" height="48"><path d="${lineWave(LINE_CX, 5, 48, 0)}" stroke="#4E7A3A" stroke-width="3" fill="none"/>${lineLeaf(LINE_CX, 12, 1)}${lineLeaf(LINE_CX, 36, -1)}</pattern></defs><rect width="${LINE_W}" height="100%" fill="url(#${id})"/></svg>`;
+  // Ribbon (default): white core, pale edge, coiling blue helix.
+  const dots = Array.from({ length: 8 }, (_, i) => {
+    const t = (i / 8) * Math.PI * 2;
+    const along = ((i + 0.5) / 8) * 40;
+    const across = 5.5 + Math.sin(t) * 4.3;
+    const depth = (Math.cos(t) + 1) / 2;
+    return `<circle cx="${(across + 3.5).toFixed(2)}" cy="${along.toFixed(2)}" r="${(0.9 + depth * 0.9).toFixed(2)}" fill="#1B4B8F" opacity="${(0.28 + depth * 0.55).toFixed(2)}"/>`;
   }).join('');
-  return `<svg width="14" height="100%" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <defs><pattern id="hx" patternUnits="userSpaceOnUse" width="14" height="${HELIX_PERIOD}">${dots}</pattern></defs>
-    <rect x="1.5" width="11" height="100%" rx="3" fill="#FFFDF8" stroke="#E9DFC4" stroke-width="1"/>
-    <rect width="14" height="100%" fill="url(#hx)"/></svg>`;
+  return `${open}<defs><pattern id="${id}" patternUnits="userSpaceOnUse" width="${LINE_W}" height="40">${dots}</pattern></defs><rect x="4.5" width="9" height="100%" rx="3" fill="#FFFDF8" stroke="#E9DFC4" stroke-width="1"/><rect width="${LINE_W}" height="100%" fill="url(#${id})"/></svg>`;
 }
 
 // One moment, rendered like a page in a printed memoir. Adaptive: photo moments
@@ -716,7 +756,7 @@ function timelineHTML(moments, owner) {
   const business = owner?.accountType === 'business';
   let lastDecade = null;
   // The central thread + a mark capping the top, so the journey begins IN the logo.
-  let html = '<div class="journey"><div class="spine">' + helixSvg() + '</div>' +
+  let html = '<div class="journey"><div class="spine">' + lineSvg(owner) + '</div>' +
     '<div class="cap"><img src="../brand/eternity-vault-mark.svg" alt=""></div>';
   for (const [year, list] of byYear) {
     const decade = Math.floor(year / 10) * 10;
@@ -938,6 +978,110 @@ function renderSpotlight(s) {
   w.querySelector('.spotlight').onclick = () => nav(`#/u/${s.handle}`);
 }
 
+// Browser geolocation for "Places near you", best-effort. Resolves null on
+// decline / no support / timeout — the caller then shows the global list.
+function getBrowserCoords(timeoutMs = 6000) {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve(null),
+      { timeout: timeoutMs, maximumAge: 10 * 60 * 1000, enableHighAccuracy: false }
+    );
+  });
+}
+
+// "City, State" in the US, "City, Country" elsewhere — mirrors the mobile
+// placeLabel() so a place reads the same on both clients.
+function placeLabelWeb(city, region, country) {
+  if (!city) return '';
+  const isUS = /^(united states|united states of america|usa|us)$/i.test(country || '');
+  const qualifier = isUS ? region || country : country || region;
+  return qualifier && qualifier !== city ? `${city}, ${qualifier}` : city;
+}
+
+const placeHash = (pl) =>
+  `#/place/${encodeURIComponent(pl.city || '')}/${encodeURIComponent(pl.region || '')}/${encodeURIComponent(pl.country || '')}`;
+
+const yearsAgoWeb = (n) => (n == null ? '' : n <= 0 ? 'Earlier today' : `${n} ${n === 1 ? 'year' : 'years'} ago today`);
+
+function renderOnThisDay(list) {
+  const w = $('#otd-wrap');
+  if (!w) return;
+  if (!list || !list.length) { w.innerHTML = ''; return; }
+  w.innerHTML = `<div class="eyebrow" style="font-size:1.3rem;">📅 On this day, across lives</div>
+    <div class="muted" style="margin:-2px 0 8px;font-size:0.9rem;">Moments from other lives, on today's date</div>
+    <div class="hstrip">${list.map((m) => `<div class="otd-card" data-moment="${esc(m.momentId)}">
+      ${m.photoUrl ? `<div class="otd-photo"><img src="${esc(m.photoUrl)}" loading="lazy" alt=""></div>`
+        : `<div class="otd-photo otd-photo-empty">${esc(String(m.year || ''))}</div>`}
+      <div class="otd-b"><div class="otd-ago">${esc(yearsAgoWeb(m.yearsAgo))}</div>
+        <div class="otd-t">${esc(m.title || m.caption || 'A moment')}</div>
+        <div class="otd-w">${esc(m.name || '')}</div></div>
+    </div>`).join('')}</div>`;
+  w.querySelectorAll('[data-moment]').forEach((c) => (c.onclick = () => nav(`#/moment/${c.getAttribute('data-moment')}`)));
+}
+
+function renderFeatured(f) {
+  const w = $('#featured-wrap');
+  if (!w) return;
+  if (!f) { w.innerHTML = ''; return; }
+  const span = f.firstYear && f.lastYear && f.firstYear !== f.lastYear ? `${f.firstYear} – ${f.lastYear}` : String(f.firstYear || f.lastYear || '');
+  const foot = [`${f.momentCount} ${f.momentCount === 1 ? 'moment' : 'moments'}`, span, f.hometown].filter(Boolean).join('  ·  ');
+  w.innerHTML = `<div class="eyebrow" style="font-size:1.3rem;">✦ Featured life of the week</div>
+    <div class="feat" data-handle="${esc(f.handle)}">
+      <div class="feat-top">
+        <div class="feat-pfp">${f.avatarUri ? `<img src="${esc(f.avatarUri)}" alt="">` : esc(initials(f.name))}</div>
+        <div class="feat-id"><div class="feat-name">${esc(f.name)}</div>
+          <div class="feat-hd">@${esc(f.handle)}${f.accountType === 'business' ? ' · Business' : ''}</div></div>
+      </div>
+      ${f.epitaph ? `<div class="feat-epi">“${esc(f.epitaph)}”</div>` : ''}
+      ${f.photos.length ? `<div class="feat-strip">${f.photos.map((u) => `<img src="${esc(u)}" loading="lazy" alt="">`).join('')}</div>` : ''}
+      <div class="feat-foot">${esc(foot)}</div>
+    </div>`;
+  w.querySelector('.feat').onclick = () => nav(`#/u/${f.handle}`);
+}
+
+function renderPlaces(list, nearby) {
+  const w = $('#places-wrap');
+  if (!w) return;
+  if (!list || !list.length) { w.innerHTML = ''; return; }
+  w.innerHTML = `<div class="eyebrow" style="font-size:1.3rem;">📍 ${nearby ? 'Places near you' : 'Cities with the most moments'}</div>
+    <div class="muted" style="margin:-2px 0 8px;font-size:0.9rem;">${nearby ? 'Memories logged around where you are' : 'Where lives are being recorded'}</div>
+    <div class="hstrip">${list.map((pl) => `<div class="place-card" data-place="${esc(placeHash(pl))}">
+      ${pl.samplePhoto ? `<div class="pc-photo"><img src="${esc(pl.samplePhoto)}" loading="lazy" alt=""></div>`
+        : `<div class="pc-photo pc-photo-empty">📍</div>`}
+      <div class="pc-b"><div class="pc-city">${esc(pl.city)}</div>
+        <div class="pc-meta">${pl.momentCount} ${pl.momentCount === 1 ? 'moment' : 'moments'}${pl.distanceKm != null ? ` · ${Math.max(1, Math.round(pl.distanceKm))} km` : ''}</div></div>
+    </div>`).join('')}</div>`;
+  w.querySelectorAll('[data-place]').forEach((c) => (c.onclick = () => nav(c.getAttribute('data-place'))));
+}
+
+// A single real place, with every moment logged there across all lives — the
+// tap-through from the Places strip on the World page.
+async function viewPlace(cityEnc, regionEnc, countryEnc) {
+  const city = decodeURIComponent(cityEnc || '');
+  const region = decodeURIComponent(regionEnc || '');
+  const country = decodeURIComponent(countryEnc || '');
+  const unread = await api.unreadCount(state.user.id).catch(() => 0);
+  renderTopbar('world', unread);
+  setLoading();
+  const list = await api.getMomentsAtPlace(city, region || null, country || null, state.blocked).catch(() => []);
+  const label = placeLabelWeb(city, region, country) || city;
+  const rows = list.map((m) => `<div class="person" data-moment="${esc(m.momentId)}">
+      <div class="feed-thumb sm">${m.photoUrl ? `<img src="${esc(m.photoUrl)}" loading="lazy" alt="">` : '📍'}</div>
+      <div class="who"><div class="nm">${esc(m.title || m.caption || 'A moment')}</div>
+        <div class="hd"><a href="#/u/${esc(m.handle)}" onclick="event.stopPropagation()">${esc(m.name)}</a>${m.year ? ' · ' + esc(String(m.year)) : ''}</div></div>
+      <div style="color:var(--blue);font-size:1.4rem;">›</div></div>`).join('');
+  root().innerHTML = `<div class="wrap">
+    <div class="eyebrow">World</div>
+    <div class="section-title" style="margin-top:2px;">📍 ${esc(label)}</div>
+    <div class="muted" style="margin-bottom:14px;">${list.length} ${list.length === 1 ? 'moment' : 'moments'} recorded here, across lives</div>
+    ${rows || '<div class="empty">No moments here yet.</div>'}
+    <div style="margin-top:16px;"><a class="btn ghost" href="#/world">← Back to World</a></div>
+    ${appFooter()}</div>`;
+  root().querySelectorAll('[data-moment]').forEach((c) => (c.onclick = () => nav(`#/moment/${c.getAttribute('data-moment')}`)));
+}
+
 // ---- World -----------------------------------------------------------------
 async function viewWorld() {
   const unread = await api.unreadCount(state.user.id).catch(() => 0);
@@ -954,6 +1098,9 @@ async function viewWorld() {
         <button class="viewchip" data-wf="business">Businesses</button>
       </div>
       <div id="trending-wrap"></div>
+      <div id="otd-wrap"></div>
+      <div id="featured-wrap"></div>
+      <div id="places-wrap"></div>
       <div id="results"></div>
       ${appFooter()}
     </div>`;
@@ -971,6 +1118,20 @@ async function viewWorld() {
         <div class="nm">${esc(t.name?.split(' ')[0] || t.handle)}</div><div class="vc">${t.viewCount} views</div></div>`).join('')}</div>`;
     $('#trending-wrap').querySelectorAll('[data-handle]').forEach((c) => (c.onclick = () => nav(`#/u/${c.getAttribute('data-handle')}`)));
   }
+
+  // The discovery strips populate independently (fire-and-forget) so nothing —
+  // least of all the up-to-6s geolocation prompt — holds up search results.
+  // On this day, across lives — moments from other lives on today's date.
+  api.getOnThisDay(state.user, state.blocked).then(renderOnThisDay).catch(() => {});
+  // Featured life of the week — one journey, same for everyone all week.
+  api.getFeaturedLife(state.blocked).then(renderFeatured).catch(() => {});
+  // Places near you (or global top cities). Ask the browser for coordinates;
+  // a decline quietly falls back to the worldwide list.
+  getBrowserCoords()
+    .then((coords) =>
+      api.getPlacesNear(coords?.lat ?? null, coords?.lng ?? null).then((list) => renderPlaces(list, !!coords))
+    )
+    .catch(() => {});
   let worldFilter = 'all';
   let lastQuery = '';
   const doSearch = async (q) => {
@@ -1606,6 +1767,10 @@ async function viewCustomize() {
       <p class="muted" style="margin-top:-4px;font-size:0.9rem;">Tints the thread, chapter markers, and small details. “Auto” follows your favorite color.</p>
       <div class="pick-row swatches" id="accent-row"><button type="button" class="swatch auto ${u.journeyAccent ? '' : 'sel'}" data-accent="" title="Auto">A</button>${FAVORITE_COLORS.map((hex) => `<button type="button" class="swatch ${u.journeyAccent === hex ? 'sel' : ''}" data-accent="${hex}" title="${hex}" style="background:${hex}"></button>`).join('')}</div>
 
+      <div class="section-title" style="font-size:1.15rem;">Journey line</div>
+      <p class="muted" style="margin-top:-4px;font-size:0.9rem;">The thread running down your Journey. The month/year tags stay the same on every Journey — but the line is yours, and it takes your accent color.</p>
+      <div class="theme-grid" id="line-grid">${JOURNEY_LINES.map((opt) => `<div class="theme-sw ${(u.journeyLine || 'ribbon') === opt.key ? 'sel' : ''}" data-line="${opt.key}"><div class="line-prev">${lineSvg({ journeyLine: opt.key, journeyAccent: u.journeyAccent, favoriteColor: u.favoriteColor }, opt.key)}</div><div class="tn">${opt.label}</div></div>`).join('')}</div>
+
       <div class="section-title" style="font-size:1.15rem;">Default fonts &amp; colors</div>
       <p class="muted" style="margin-top:-4px;font-size:0.9rem;">These set the look for every moment. Pick “Classic” / “Blue” to leave a field on its default.</p>
       ${STYLE_FIELDS.map((f) => `<div class="style-block"><div class="style-label">${f.label}</div>${fontsRow(f.key)}${colorsRow(f.key)}</div>`).join('')}
@@ -1630,6 +1795,7 @@ async function viewCustomize() {
   wire('bg-grid', 'data-bg', 'journeyBg');
   wire('shape-grid', 'data-shape', 'journeyPhotoShape');
   wire('mat-grid', 'data-mat', 'journeyPhotoMat');
+  wire('line-grid', 'data-line', 'journeyLine');
 
   // Cover: upload a fresh file, or clear it — then re-render this screen.
   const coverFile = $('#cover-file');
@@ -2480,6 +2646,7 @@ async function route() {
       case 'edit': await viewMomentForm(parts[1]); break;
       case 'moment': await viewMoment(parts[1]); break;
       case 'u': await viewPerson(parts[1]); break;
+      case 'place': await viewPlace(parts[1], parts[2], parts[3]); break;
       case 'profile':
         if (parts[1] === 'edit') await viewProfileEdit();
         else if (parts[1] === 'qr') await viewQR();

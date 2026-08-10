@@ -210,6 +210,7 @@ export const profileToUser = (p) => ({
   journeyPhotoMat: p.journey_photo_mat || 'cream',
   journeyTextScale: p.journey_text_scale || 'm',
   journeyAccent: p.journey_accent || '',
+  journeyLine: p.journey_line || 'ribbon',
   coverUrl: p.journey_cover_url || null,
   ...journeyFieldsFromRow(p),
   tagPermission: p.tag_permission || 'anyone',
@@ -490,6 +491,7 @@ export const updateProfile = async (userId, patch) => {
     journeyPhotoMat: 'journey_photo_mat',
     journeyTextScale: 'journey_text_scale',
     journeyAccent: 'journey_accent',
+    journeyLine: 'journey_line',
     coverUrl: 'journey_cover_url',
     locationFont: 'location_font',
     locationFontColor: 'location_font_color',
@@ -1199,6 +1201,107 @@ export const getJourneySpotlight = async (blocked = new Set()) => {
     day: row.day,
     photoUrl: await signStoredUrl('photos', row.photo_url),
   };
+};
+
+// "On This Day, Across Lives" — moments from OTHER journeys on today's date,
+// any year. Server drops sealed/hidden/banned; here we drop your own + blocked.
+export const getOnThisDay = async (self, blocked = new Set(), limitN = 24) => {
+  const { data, error } = await supabase.rpc('get_on_this_day', { limit_n: limitN });
+  if (error) return [];
+  const rows = (data || []).filter((r) => r.user_id !== self?.id && !blocked.has(r.user_id));
+  const [photos, avatars] = await Promise.all([
+    signStoredUrls('photos', rows.map((r) => r.photo_url || null)),
+    signStoredUrls('photos', rows.map((r) => r.avatar_url || null)),
+  ]);
+  return rows.map((r, i) => ({
+    momentId: r.moment_id,
+    ownerId: r.user_id,
+    name: r.name,
+    handle: r.handle,
+    avatarUri: avatars[i] || null,
+    accountType: r.account_type || 'personal',
+    year: r.year,
+    title: r.title,
+    caption: r.caption,
+    photoUrl: photos[i] || null,
+    yearsAgo: r.years_ago,
+  }));
+};
+
+// "Featured Life of the Week" — one journey, deterministic per week (same for
+// everyone). Returns null if you've blocked this week's pick.
+export const getFeaturedLife = async (blocked = new Set()) => {
+  const { data, error } = await supabase.rpc('get_featured_life');
+  if (error) return null;
+  const row = data?.[0];
+  if (!row || blocked.has(row.profile_id)) return null;
+  const [avatar, photos] = await Promise.all([
+    signStoredUrl('photos', row.avatar_url || null),
+    signStoredUrls('photos', row.photo_urls || []),
+  ]);
+  return {
+    profileId: row.profile_id,
+    name: row.name,
+    handle: row.handle,
+    avatarUri: avatar,
+    accountType: row.account_type || 'personal',
+    epitaph: row.epitaph || '',
+    hometown: row.hometown || '',
+    momentCount: Number(row.moment_count) || 0,
+    firstYear: row.first_year,
+    lastYear: row.last_year,
+    photos: (photos || []).filter(Boolean),
+  };
+};
+
+// "Places near you" — places with memories across all lives, nearest first
+// with coordinates; global top-cities (BRA-39) with null lat/lng.
+export const getPlacesNear = async (lat = null, lng = null, radiusKm = 80, limitN = 12) => {
+  const { data, error } = await supabase.rpc('get_places_near', {
+    in_lat: lat, in_lng: lng, radius_km: radiusKm, limit_n: limitN,
+  });
+  if (error) return [];
+  const rows = data || [];
+  const photos = await signStoredUrls('photos', rows.map((r) => r.sample_photo || null));
+  return rows.map((r, i) => ({
+    city: r.place_city,
+    region: r.place_region,
+    country: r.place_country,
+    lat: r.place_lat,
+    lng: r.place_lng,
+    momentCount: Number(r.moment_count) || 0,
+    contributorCount: Number(r.contributor_count) || 0,
+    samplePhoto: photos[i] || null,
+    distanceKm: r.distance_km == null ? null : Number(r.distance_km),
+  }));
+};
+
+// Every moment at one real place, across journeys — tap-through from Places.
+export const getMomentsAtPlace = async (city, region = null, country = null, blocked = new Set(), limitN = 40) => {
+  if (!city) return [];
+  const { data, error } = await supabase.rpc('get_moments_at_place', {
+    in_city: city, in_region: region, in_country: country, limit_n: limitN,
+  });
+  if (error) return [];
+  const rows = (data || []).filter((r) => !blocked.has(r.user_id));
+  const [photos, avatars] = await Promise.all([
+    signStoredUrls('photos', rows.map((r) => r.photo_url || null)),
+    signStoredUrls('photos', rows.map((r) => r.avatar_url || null)),
+  ]);
+  return rows.map((r, i) => ({
+    momentId: r.moment_id,
+    ownerId: r.user_id,
+    name: r.name,
+    handle: r.handle,
+    avatarUri: avatars[i] || null,
+    year: r.year,
+    month: r.month,
+    day: r.day,
+    title: r.title,
+    caption: r.caption,
+    location: r.location,
+    photoUrl: photos[i] || null,
+  }));
 };
 
 // The newest moments posted by a set of users — the Inner Circle feed. Sealed
