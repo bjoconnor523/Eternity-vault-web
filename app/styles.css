@@ -305,6 +305,14 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 .more-item:hover { background: rgba(27,75,143,0.07); }
 .more-item.danger, .more-item.danger i { color: #a6412f; }
 
+/* Person page: a small top row — back link left, round actions right. */
+.pv-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.pv-actions { position: relative; display: flex; gap: 10px; }
+.pv-actions .more-menu { top: 52px; }
+.round-btn { width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--line-strong); background: var(--paper); color: var(--blue); display: inline-flex; align-items: center; justify-content: center; padding: 0; box-shadow: var(--shadow-sm); transition: background 0.15s ease, border-color 0.15s ease; }
+.round-btn:hover { background: rgba(27,75,143,0.06); border-color: var(--blue); }
+.round-btn.in { background: var(--gold); border-color: var(--gold-deep); color: var(--blue-deep); }
+
 /* Share modal — a checklist of your Circle */
 .share-list { max-height: 300px; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; margin-top: 4px; }
 .share-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }

@@ -900,6 +900,11 @@ async function viewJourney() {
   startAvatarRotation(state.user);
 }
 
+// Small round-button glyphs, reused in the template and the toggle handler.
+const CIRCLE_PLUS_SVG = '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8.5v7M8.5 12h7"/></svg>';
+const CIRCLE_CHECK_SVG = '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.4 12.4l2.4 2.4 4.8-5.2"/></svg>';
+const TRIDOT_SVG = '<svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="4.5" r="1.7" fill="currentColor"/><circle cx="5.5" cy="13.5" r="1.7" fill="currentColor"/><circle cx="14.5" cy="13.5" r="1.7" fill="currentColor"/></svg>';
+
 // ---- Person (someone else's journey) ---------------------------------------
 async function viewPerson(handle) {
   renderTopbar('world');
@@ -920,16 +925,21 @@ async function viewPerson(handle) {
   root().innerHTML = `
     ${journeyBackdropHTML(u)}
     <div class="wrap journeywide">
-      <a class="back" href="#/world">← World</a>
+      <div class="pv-topbar">
+        <a class="back" href="#/world" style="margin:0;">← World</a>
+        <div class="pv-actions">
+          <button class="round-btn ${inCircle ? 'in' : ''}" id="circle-btn" title="${inCircle ? 'In your Circle' : 'Add to Circle'}" aria-label="${inCircle ? 'In your Circle' : 'Add to Circle'}">${inCircle ? CIRCLE_CHECK_SVG : CIRCLE_PLUS_SVG}</button>
+          <button class="round-btn" id="pv-more" title="More" aria-label="More options" aria-haspopup="true">${TRIDOT_SVG}</button>
+          <div class="more-menu" id="pv-menu" hidden>
+            <button class="more-item" id="share-btn"><i>↗</i> Send / Request</button>
+            <button class="more-item" id="report-btn"><i>⚑</i> Report</button>
+            <button class="more-item danger" id="block-btn"><i>⊘</i> Block</button>
+          </div>
+        </div>
+      </div>
       ${monumentHTML(u, moments, circleCount, false)}
       ${moments.length ? journeySummary(moments) : ''}
       ${moments.length ? timelineMapHTML(moments, u) : ''}
-      <div class="btn-row">
-        <button class="btn ${inCircle ? 'ghost' : ''}" id="circle-btn">${inCircle ? 'In your Circle ✓' : '+ Add to Circle'}</button>
-        <button class="btn ghost sm" id="share-btn">📷 Send / Request</button>
-        <button class="btn ghost sm" id="report-btn">⚑ Report</button>
-        <button class="btn danger sm" id="block-btn">Block</button>
-      </div>
       <div class="section-title" style="text-align:center;">${esc(u.name?.split(' ')[0] || 'Their')}'s Journey</div>
       ${moments.length ? `${viewChipsHTML('pv-chips')}${decadeRailHTML(moments)}<div id="pv-host"></div>` : '<div class="empty">No moments yet.</div>'}
       ${appFooter()}
@@ -940,23 +950,41 @@ async function viewPerson(handle) {
   // Circle stat) instead of re-rendering the whole page, which would reset the
   // scroll position back to the top.
   let inCircleNow = inCircle;
-  $('#circle-btn').onclick = async () => {
-    const btn = $('#circle-btn'); btn.disabled = true;
+  const circleBtn = $('#circle-btn');
+  circleBtn.onclick = async () => {
+    circleBtn.disabled = true;
     try {
       if (inCircleNow) await api.removeFromCircle(state.user.id, u.id);
       else await api.addToCircle(state.user, u.id);
       inCircleNow = !inCircleNow;
-      btn.textContent = inCircleNow ? 'In your Circle ✓' : '+ Add to Circle';
-      btn.classList.toggle('ghost', inCircleNow);
+      circleBtn.classList.toggle('in', inCircleNow);
+      circleBtn.innerHTML = inCircleNow ? CIRCLE_CHECK_SVG : CIRCLE_PLUS_SVG;
+      circleBtn.title = inCircleNow ? 'In your Circle' : 'Add to Circle';
+      circleBtn.setAttribute('aria-label', circleBtn.title);
       // Keep their Circle count (3rd monument stat) in sync without a reload.
       const countEl = root().querySelectorAll('.monument .stat .n')[2];
       if (countEl) { const n = parseInt(countEl.textContent, 10); if (!Number.isNaN(n)) countEl.textContent = String(Math.max(0, n + (inCircleNow ? 1 : -1))); }
     } catch (e) { alert(e.message); }
-    finally { btn.disabled = false; }
+    finally { circleBtn.disabled = false; }
   };
-  $('#share-btn').onclick = () => openShareModal(u, 'send');
-  $('#report-btn').onclick = () => openReport({ reportedUserId: u.id, label: `@${u.handle}` });
+  // The tri-dot menu: Send / Request, Report, Block — tucked out of the way.
+  const pvMore = $('#pv-more'), pvMenu = $('#pv-menu');
+  if (pvMore && pvMenu) {
+    pvMore.onclick = (e) => {
+      e.stopPropagation();
+      const willOpen = pvMenu.hidden;
+      pvMenu.hidden = !willOpen;
+      if (willOpen) {
+        const closeOnce = () => { pvMenu.hidden = true; document.removeEventListener('click', closeOnce); };
+        setTimeout(() => document.addEventListener('click', closeOnce), 0);
+      }
+    };
+  }
+  const closeMenu = () => { if (pvMenu) pvMenu.hidden = true; };
+  $('#share-btn').onclick = () => { closeMenu(); openShareModal(u, 'send'); };
+  $('#report-btn').onclick = () => { closeMenu(); openReport({ reportedUserId: u.id, label: `@${u.handle}` }); };
   $('#block-btn').onclick = async () => {
+    closeMenu();
     if (!confirm(`Block @${u.handle}? You won't see each other, and they can't contact you.`)) return;
     try { await api.blockUser(state.user, u.id); await loadBlocked(); nav('#/world'); } catch (e) { alert(e.message); }
   };

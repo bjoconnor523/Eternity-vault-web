@@ -1359,6 +1359,25 @@ export const getCircleMomentCounts = async (userIds) => {
   return out;
 };
 
+// Share a moment with other members on the platform — sends each recipient a
+// 'share' notification linking to the moment. In-platform only for now (no
+// external social / SMS). Returns how many were sent.
+export const shareMoment = async (self, momentId, momentTitle, toUserIds, note = '') => {
+  if (!self || !momentId) return 0;
+  let sent = 0;
+  for (const toId of toUserIds || []) {
+    if (!toId || toId === self.id) continue;
+    await pushNotification(self, toId, {
+      type: 'share',
+      memoryId: momentId,
+      memoryTitle: momentTitle || 'a moment',
+      body: (note || '').trim() || null,
+    });
+    sent += 1;
+  }
+  return sent;
+};
+
 // ---- Witnessing, adopting, contributions, comment tools -------------------
 // Confirm your own tag on someone's moment → it becomes "witnessed".
 export const confirmTag = async (self, momentId, ownerId) => {
