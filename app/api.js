@@ -8,6 +8,7 @@
 // data is shaped here, keep it in step with the phone app.
 // ============================================================================
 import { supabase } from './supabase.js';
+import { LIMITS, COUNTS, COUNT_MESSAGES, enforceLen } from './limits.js';
 
 // ---- Media: private buckets, re-signed on read -----------------------------
 // The photos/audio buckets are private. A stored value is a storage PATH (or an
@@ -196,6 +197,7 @@ export const profileToUser = (p) => ({
   hometown: p.hometown,
   bio: p.bio,
   epitaph: p.epitaph || '',
+  currentLocation: p.current_location || '',
   isModerator: !!p.is_moderator,
   isAdmin: !!p.is_admin,
   accountType: p.account_type || 'personal',
@@ -451,6 +453,12 @@ export const fetchUserByHandle = async (handle) => {
 };
 
 export const updateProfile = async (userId, patch) => {
+  // Friendly length guards (the DB enforces these too, as the real backstop).
+  if ('name' in patch) enforceLen('name', patch.name);
+  if ('bio' in patch) enforceLen('bio', patch.bio);
+  if ('epitaph' in patch) enforceLen('epitaph', patch.epitaph);
+  if ('hometown' in patch) enforceLen('hometown', patch.hometown);
+  if ('currentLocation' in patch) enforceLen('currentLocation', patch.currentLocation);
   const next = { ...patch };
   if ('avatarFile' in patch && patch.avatarFile) {
     const url = await uploadOnePhoto(userId, patch.avatarFile);
@@ -484,6 +492,7 @@ export const updateProfile = async (userId, patch) => {
     hometown: 'hometown',
     bio: 'bio',
     epitaph: 'epitaph',
+    currentLocation: 'current_location',
     favoriteColor: 'favorite_color',
     favoriteNumber: 'favorite_number',
     journeyBg: 'journey_bg',
@@ -598,7 +607,10 @@ export const addSavedCompanions = async (userId, names) => {
   if (!clean.length) return;
   const { data: existing } = await supabase.from('saved_companions').select('name').eq('owner_id', userId);
   const have = new Set((existing || []).map((r) => r.name.toLowerCase()));
-  const toAdd = clean.filter((n) => !have.has(n.toLowerCase()));
+  // Reuse-suggestion list only — stop growing at the cap rather than ever
+  // blocking a moment from saving. The DB trigger is the hard guard.
+  const remaining = Math.max(0, COUNTS.savedCompanions - (existing?.length || 0));
+  const toAdd = clean.filter((n) => !have.has(n.toLowerCase())).slice(0, remaining);
   if (toAdd.length) await supabase.from('saved_companions').insert(toAdd.map((name) => ({ owner_id: userId, name })));
 };
 
@@ -619,6 +631,9 @@ export const addSavedPlace = async (userId, p) => {
   const { data: existing } = await supabase
     .from('saved_places').select('id').eq('owner_id', userId).ilike('label', label).maybeSingle();
   if (existing) return;
+  // Reuse-suggestion list only — silently stop at the cap. DB is the guard.
+  const { count } = await supabase.from('saved_places').select('id', { count: 'exact', head: true }).eq('owner_id', userId);
+  if ((count || 0) >= COUNTS.savedPlaces) return;
   await supabase.from('saved_places').insert({
     owner_id: userId, kind: p.kind || 'custom', label,
     city: p.city || null, region: p.region || null, country: p.country || null,
@@ -660,6 +675,15 @@ const notifyNewTags = async (self, tags, prevTags, moment) => {
 
 export const addMemory = async (self, memory) => {
   const tags = await resolveTags(memory.tags);
+  // Friendly caps (the DB enforces all of these too).
+  const { count: momentCount } = await supabase
+    .from('moments').select('id', { count: 'exact', head: true }).eq('user_id', self.id);
+  if ((momentCount || 0) >= COUNTS.momentsPerJourney) throw new Error(COUNT_MESSAGES.momentsPerJourney);
+  if (tags.length > COUNTS.tagsPerMoment) throw new Error(COUNT_MESSAGES.tagsPerMoment);
+  enforceLen('title', memory.title);
+  enforceLen('caption', memory.caption);
+  enforceLen('story', memory.story);
+  enforceLen('location', memory.location);
   const photos = await uploadPhotos(self.id, memory.photos || []);
   const month = memory.month >= 1 && memory.month <= 12 ? memory.month : null;
   const day = month && memory.day >= 1 && memory.day <= 31 ? memory.day : null;
@@ -693,6 +717,10 @@ export const addMemory = async (self, memory) => {
 };
 
 export const updateMemory = async (self, id, patch, prevTags) => {
+  if ('title' in patch) enforceLen('title', patch.title);
+  if ('caption' in patch) enforceLen('caption', patch.caption);
+  if ('story' in patch) enforceLen('story', patch.story);
+  if ('location' in patch) enforceLen('location', patch.location);
   const cols = {};
   if ('year' in patch) cols.year = patch.year;
   if ('month' in patch) cols.month = patch.month >= 1 && patch.month <= 12 ? patch.month : null;
@@ -818,6 +846,7 @@ export const getComments = async (momentId) => {
 
 export const addComment = async (self, momentId, text) => {
   if (!text.trim()) return;
+  enforceLen('comment', text);
   const { error } = await supabase.from('comments').insert({ moment_id: momentId, user_id: self.id, text: text.trim() });
   if (error) throw new Error('Could not post your comment.');
   const { data: moment } = await supabase.from('moments').select('user_id, title, year').eq('id', momentId).single();
@@ -1318,6 +1347,18 @@ export const getRecentMomentsOf = async (userIds, limit = 24) => {
   return hydrateMoments((data || []).map(momentFromRow));
 };
 
+// Per-person moment counts for a set of profiles, in one round trip — backs the
+// "N moments" line on the Circle shelf without one count query per member.
+// Mirrors the app's getCircleMomentCounts. Returns a { id: count } map.
+export const getCircleMomentCounts = async (userIds) => {
+  if (!userIds?.length) return {};
+  const { data, error } = await supabase.rpc('get_circle_moment_counts', { ids: userIds });
+  if (error) return {};
+  const out = {};
+  for (const r of data || []) out[r.user_id] = Number(r.moment_count) || 0;
+  return out;
+};
+
 // ---- Witnessing, adopting, contributions, comment tools -------------------
 // Confirm your own tag on someone's moment → it becomes "witnessed".
 export const confirmTag = async (self, momentId, ownerId) => {
@@ -1350,6 +1391,7 @@ export const adoptMoment = async (self, momentId) => {
 
 // A confirmed companion adds their own side (note + photos) to a moment.
 export const addOrUpdateContribution = async (self, momentId, { photos, note }) => {
+  enforceLen('contribution', note);
   const uploaded = await uploadPhotos(self.id, photos || []);
   const { data: existing } = await supabase.from('moment_contributions').select('id').eq('moment_id', momentId).eq('contributor_id', self.id).maybeSingle();
   const { error } = await supabase.from('moment_contributions').upsert(

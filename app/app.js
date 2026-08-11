@@ -4,6 +4,7 @@
 // ============================================================================
 import { supabase } from './supabase.js';
 import * as api from './api.js';
+import { LIMITS } from './limits.js';
 
 // ---- Small helpers ---------------------------------------------------------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -484,7 +485,7 @@ function viewAuth() {
         <div id="auth-err"></div>
         <form id="auth-form">
           ${mode === 'signup' ? `
-            <div class="field"><label>Your name</label><input name="name" autocomplete="name" required></div>
+            <div class="field"><label>Your name</label><input name="name" autocomplete="name" maxlength="${LIMITS.name}" required></div>
             <div class="field"><label>Handle</label><input name="handle" placeholder="yourname" autocomplete="username" required>
               <div class="hint">3–15 characters: lowercase letters, numbers, underscores.</div></div>` : ''}
           <div class="field"><label>Email</label><input name="email" type="email" autocomplete="email" required></div>
@@ -634,6 +635,7 @@ function monumentHTML(u, moments, circleCount, isSelf) {
       <div>${business ? '<span class="chip">Business</span>' : ''}${sealed ? '<span class="chip sealed">✦ Kept as they left it</span>' : ''}</div>
       ${u.epitaph ? `<div class="epitaph">“${esc(u.epitaph)}”</div>` : isSelf ? `<div class="epitaph muted"><a href="#/profile/edit">+ add an epitaph</a></div>` : ''}
       ${birthBits.length ? `<div class="birthline">${bornWord} ${esc(birthBits.join(' · '))}</div>` : ''}
+      ${u.currentLocation ? `<div class="rooted"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg><span>Rooted in ${esc(u.currentLocation)}</span></div>` : isSelf ? `<div class="rooted muted"><a href="#/profile/edit">+ where you're rooted now</a></div>` : ''}
       ${u.bio ? `<p style="max-width:480px;margin:14px auto 0;">${esc(u.bio)}</p>` : isSelf ? `<p class="muted" style="margin-top:10px;"><a href="#/profile/edit">+ add a short bio</a></p>` : ''}
       ${u.links && u.links.length ? `<div class="prof-links">${u.links.map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noopener" class="prof-link">${esc(l.label || l.url)}</a>`).join('')}</div>` : ''}
       <div class="stats">
@@ -1176,6 +1178,49 @@ function personRowHTML(u) {
 }
 
 // ---- Circle ----------------------------------------------------------------
+// A pale favorite color leaves the white book text unreadable — nudge any light
+// accent to a deep slate so every spine reads as a real cover. Mirrors the app's
+// coverColor() in CircleScreen.
+function shelfCoverColor(u) {
+  const hex = u.journeyAccent || u.favoriteColor || '';
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return '#39445A';
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.6 ? '#39445A' : hex;
+}
+// The little life-span line on a book — all from the profile, no query.
+function shelfSpan(u) {
+  if (!u.birthYear) return '';
+  if (u.accountType === 'business') return `Founded ${u.birthYear}`;
+  if (u.memorialState === 'sealed') {
+    const end = u.sealedAt ? new Date(u.sealedAt).getFullYear() : '';
+    return `${u.birthYear} – ${end || 'present'}`;
+  }
+  return `${u.birthYear} – present`;
+}
+// One life on the shelf: cover (or accent wash), name, epitaph, span, moment
+// count, and where they're rooted now. A doorway — the whole book opens their
+// Journey.
+function lifebookHTML(u, count) {
+  const accent = shelfCoverColor(u);
+  const span = shelfSpan(u);
+  const meta = [span, count > 0 ? `${count} ${count === 1 ? 'moment' : 'moments'}` : ''].filter(Boolean).join('  ·  ');
+  const cover = u.coverUrl
+    ? `<div class="lb-cover" style="background-image:url('${esc(u.coverUrl)}')"></div>`
+    : `<div class="lb-cover" style="background:${accent}"></div><div class="lb-ghost">${esc(initials(u.name || '?'))}</div>`;
+  return `<div class="lifebook" data-handle="${esc(u.handle || '')}">
+    ${cover}
+    <div class="lb-spine" style="background:${accent}"></div>
+    ${u.accountType === 'business' ? '<div class="lb-biz">Business</div>' : ''}
+    <div class="lb-band">
+      <div class="lb-name">${esc(u.name || 'Unnamed')}</div>
+      ${u.epitaph ? `<div class="lb-epi">“${esc(u.epitaph)}”</div>` : ''}
+      ${meta ? `<div class="lb-meta">${esc(meta)}</div>` : ''}
+      ${u.currentLocation ? `<div class="lb-rooted"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg><span>Rooted in ${esc(u.currentLocation)}</span></div>` : ''}
+    </div>
+  </div>`;
+}
+
 async function viewCircle() {
   const unread = await api.unreadCount(state.user.id).catch(() => 0);
   renderTopbar('circle', unread);
@@ -1184,33 +1229,18 @@ async function viewCircle() {
   const ids = [...new Set(pairs.map((p) => (p.a === state.user.id ? p.b : p.a)))].filter((id) => !state.blocked.has(id));
   const people = [];
   for (const id of ids) { const u = await api.fetchUserById(id); if (u) people.push(u); }
-  const nameMap = new Map(people.map((p) => [p.id, p]));
-  const feed = ids.length ? await api.getRecentMomentsOf(ids) : [];
-  const feedItem = (m) => {
-    const owner = nameMap.get(m.ownerId);
-    const thumb = m.photos && m.photos[0];
-    return `<div class="feed-item" data-moment="${esc(m.id)}">
-      <div class="feed-pfp">${owner?.avatarUri ? `<img src="${esc(owner.avatarUri)}" alt="">` : esc(initials(owner?.name || '?'))}</div>
-      <div class="feed-body">
-        <div class="feed-who"><strong>${esc(owner?.name || 'Someone')}</strong> added <strong>${esc(m.title || 'a moment')}</strong> <span class="muted">· ${esc(fullDate(m))}</span></div>
-        ${m.caption ? `<div class="muted" style="font-size:0.92rem;">${esc(m.caption)}</div>` : ''}
-      </div>
-      ${thumb ? `<div class="feed-thumb"><img src="${esc(thumb)}" loading="lazy" alt=""></div>` : ''}
-    </div>`;
-  };
+  people.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const counts = ids.length ? await api.getCircleMomentCounts(ids) : {};
   root().innerHTML = `
     <div class="wrap">
       <div class="section-title">Your Circle</div>
-      ${feed.length ? `<div class="eyebrow" style="font-size:1.3rem;">Latest from your Circle</div>
-        <div class="feed">${feed.map(feedItem).join('')}</div>` : ''}
-      <div class="section-title" style="font-size:1.3rem;">Members</div>
-      <p class="muted" style="margin-top:0;">The people whose lives are woven with yours.</p>
-      ${people.length ? people.map(personRowHTML).join('')
+      ${people.length
+        ? `<p class="muted" style="margin-top:-6px;">${people.length} ${people.length === 1 ? 'life' : 'lives'} you keep close — a shelf of doorways into other Journeys.</p>
+           <div class="shelf">${people.map((u) => lifebookHTML(u, counts[u.id] || 0)).join('')}</div>`
         : `<div class="empty"><div class="big">✦</div>Your Circle is empty.<br>Find people in the <a href="#/world">World</a>.</div>`}
       ${appFooter()}
     </div>`;
   root().querySelectorAll('[data-handle]').forEach((c) => (c.onclick = () => nav(`#/u/${c.getAttribute('data-handle')}`)));
-  root().querySelectorAll('.feed-item').forEach((c) => (c.onclick = () => nav(`#/moment/${c.getAttribute('data-moment')}`)));
 }
 
 // ---- Notifications ---------------------------------------------------------
@@ -1295,7 +1325,7 @@ async function viewMoment(id) {
           ${c.audioUrl ? `<audio controls src="${esc(c.audioUrl)}" style="width:100%;margin-top:8px;"></audio>` : ''}</div>`).join('')}` : ''}
       <div class="section-title">Comments</div>
       ${frozen ? '<div class="notice">This journey is sealed and kept as they left it. It can be read, but not added to.</div>' : `
-        <form id="comment-form" style="display:flex;gap:8px;margin-bottom:16px;"><input name="text" placeholder="Leave a comment…" style="flex:1" required><button class="btn" type="submit">Post</button></form>`}
+        <form id="comment-form" style="display:flex;gap:8px;margin-bottom:16px;"><input name="text" maxlength="${LIMITS.comment}" placeholder="Leave a comment…" style="flex:1" required><button class="btn" type="submit">Post</button></form>`}
       <div id="comments">${comments.length ? comments.map((c) => `<div class="comment"><span class="who">${esc(c.name)}</span>${c.pinned ? ' 📌' : ''}<span class="when">${timeAgo(c.createdAt)}</span><div>${esc(c.text)}</div>${(isOwner || c.userId === state.user.id) ? `<div class="comment-tools">${isOwner ? `<button class="linkbtn" data-pin="${esc(c.id)}" data-pinned="${c.pinned ? 1 : 0}">${c.pinned ? 'Unpin' : 'Pin'}</button>` : ''}<button class="linkbtn" data-delc="${esc(c.id)}">Delete</button></div>` : ''}</div>`).join('') : '<div class="muted">No comments yet.</div>'}</div>
       ${appFooter()}
     </div>`;
@@ -1339,7 +1369,7 @@ function openContribution(momentId) {
       <h2>Add your side of the story</h2>
       <div id="ct-msg"></div>
       <form id="ct-form">
-        <div class="field"><label>Your telling</label><textarea name="note" placeholder="What do you remember from that day?"></textarea></div>
+        <div class="field"><label>Your telling</label><textarea name="note" maxlength="${LIMITS.contribution}" placeholder="What do you remember from that day?"></textarea></div>
         <div class="field"><label>Your photos (optional)</label><input type="file" id="ct-files" accept="image/*,video/*" multiple>
           <div class="photo-preview" id="ct-prev">${files.map((f, i) => `<div class="pp"><img src="${URL.createObjectURL(f)}"><button type="button" class="rm" data-i="${i}">×</button></div>`).join('')}</div></div>
         <div class="btn-row" style="justify-content:flex-end;"><button type="button" class="btn ghost sm" id="ct-cancel">Cancel</button><button type="submit" class="btn sm">Add</button></div>
@@ -1386,9 +1416,9 @@ async function viewMomentForm(existingId) {
           <div class="field"><label>Month</label><select name="month">${['', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((v) => `<option value="${v}" ${m && String(m.month || '') === String(v) ? 'selected' : ''}>${v ? MONTHS[v] : '—'}</option>`).join('')}</select></div>
           <div class="field"><label>Day</label><input name="day" type="number" min="1" max="31" value="${m && m.day ? m.day : ''}"></div>
         </div>
-        <div class="field"><label>Title</label><input name="title" value="${m ? esc(m.title) : ''}" placeholder="e.g. Summer at the lake house"></div>
-        <div class="field"><label>Caption</label><input name="caption" value="${m ? esc(m.caption) : ''}" placeholder="A short line"></div>
-        <div class="field"><label>Story</label><textarea name="story" placeholder="Tell it the way you'd tell it…">${m ? esc(m.story) : ''}</textarea></div>
+        <div class="field"><label>Title</label><input name="title" value="${m ? esc(m.title) : ''}" maxlength="${LIMITS.title}" placeholder="e.g. Summer at the lake house"></div>
+        <div class="field"><label>Caption</label><input name="caption" value="${m ? esc(m.caption) : ''}" maxlength="${LIMITS.caption}" placeholder="A short line"></div>
+        <div class="field"><label>Story</label><textarea name="story" maxlength="${LIMITS.story}" placeholder="Tell it the way you'd tell it…">${m ? esc(m.story) : ''}</textarea></div>
         <div class="field"><label>Where did it happen?</label>
           <div class="row" id="place-city-row">
             <input name="city" value="${esc(curCity)}" placeholder="City">
@@ -1397,7 +1427,7 @@ async function viewMomentForm(existingId) {
               ${US_STATES.map((s) => `<option value="${esc(s)}" ${curState === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
             </select>
           </div>
-          <div id="place-custom-row" style="display:none;"><input name="customPlace" placeholder="Custom place — e.g. Grandma's kitchen"></div>
+          <div id="place-custom-row" style="display:none;"><input name="customPlace" maxlength="${LIMITS.location}" placeholder="Custom place — e.g. Grandma's kitchen"></div>
           <div class="hint" id="place-hint">United States for now — we'll add more countries soon. <a href="#" id="place-toggle">Use a custom place name →</a></div>
           <div id="saved-place" class="saved-comp"></div>
         </div>
@@ -1571,15 +1601,16 @@ async function viewProfileEdit() {
         </div>
         <div class="field" id="rotate-field" style="display:${total() > 1 ? 'block' : 'none'}"><label>Rotate photos</label>
           <select id="rotate">${ROTATE_OPTIONS.map((o) => `<option value="${o.key}" ${((u.avatarRotate || 'day') === o.key) ? 'selected' : ''}>${o.label}</option>`).join('')}</select></div>
-        <div class="field"><label>Name</label><input name="name" value="${esc(u.name || '')}"></div>
-        <div class="field"><label>Epitaph <span class="muted">— a line that captures a life</span></label><input name="epitaph" value="${esc(u.epitaph || '')}" placeholder="She never met a stranger."></div>
-        <div class="field"><label>Bio</label><textarea name="bio" placeholder="A few words about you.">${esc(u.bio || '')}</textarea></div>
+        <div class="field"><label>Name</label><input name="name" value="${esc(u.name || '')}" maxlength="${LIMITS.name}"></div>
+        <div class="field"><label>Epitaph <span class="muted">— a line that captures a life</span></label><input name="epitaph" value="${esc(u.epitaph || '')}" maxlength="${LIMITS.epitaph}" placeholder="She never met a stranger."></div>
+        <div class="field"><label>Bio</label><textarea name="bio" maxlength="${LIMITS.bio}" placeholder="A few words about you.">${esc(u.bio || '')}</textarea></div>
         <div class="row">
           <div class="field"><label>Birth year</label><input name="birthYear" type="number" min="1900" max="${new Date().getFullYear()}" value="${u.birthYear || ''}"></div>
           <div class="field"><label>Month</label><select name="birthMonth">${['', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((v) => `<option value="${v}" ${String(u.birthMonth || '') === String(v) ? 'selected' : ''}>${v ? MONTHS[v] : '—'}</option>`).join('')}</select></div>
           <div class="field"><label>Day</label><input name="birthDay" type="number" min="1" max="31" value="${u.birthDay || ''}"></div>
         </div>
-        <div class="field"><label>Hometown</label><input name="hometown" value="${esc(u.hometown || '')}" placeholder="Where you're from"></div>
+        <div class="field"><label>Hometown</label><input name="hometown" value="${esc(u.hometown || '')}" maxlength="${LIMITS.hometown}" placeholder="Where you're from"></div>
+        <div class="field"><label>Currently rooted <span class="muted">— where you live now</span></label><input name="currentLocation" value="${esc(u.currentLocation || '')}" maxlength="${LIMITS.currentLocation}" placeholder="Portland, Oregon"></div>
         <div class="row">
           <div class="field"><label>Favorite number</label><input name="favoriteNumber" type="number" value="${u.favoriteNumber ?? ''}" placeholder="e.g. 7"></div>
           <div class="field"><label>Favorite color</label><div style="display:flex;gap:8px;flex-wrap:wrap;" id="colors">
@@ -1642,6 +1673,7 @@ async function viewProfileEdit() {
         birthMonth: f.get('birthMonth') ? +f.get('birthMonth') : null,
         birthDay: f.get('birthDay') ? +f.get('birthDay') : null,
         hometown: f.get('hometown'),
+        currentLocation: f.get('currentLocation'),
         favoriteColor: favColor,
         favoriteNumber: f.get('favoriteNumber') === '' ? null : +f.get('favoriteNumber'),
         avatarPhotos: [...photos, ...newFiles],
@@ -2324,7 +2356,7 @@ async function viewMerchProduct(key) {
 
         <div class="section-title" style="font-size:1.1rem;">Ship to</div>
         <div class="panel">
-          <div class="field"><label>Full name</label><input id="s-name" value="${esc(u.name || '')}"></div>
+          <div class="field"><label>Full name</label><input id="s-name" value="${esc(u.name || '')}" maxlength="${LIMITS.name}"></div>
           <div class="field"><label>Street address</label><input id="s-addr" value="${esc(u.addressLine1 || '')}"></div>
           <div class="row">
             <div class="field"><label>City</label><input id="s-city" value="${esc(u.city || '')}"></div>
