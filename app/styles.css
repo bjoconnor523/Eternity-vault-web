@@ -267,6 +267,31 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
   position: relative;
 }
 .monument .birthline { color: var(--muted); font-size: 0.98rem; margin-top: 6px; }
+/* "Currently rooted" — where this life is planted now, under the birth line. */
+.monument .rooted { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--ink); font-size: 0.98rem; font-weight: 500; }
+.monument .rooted svg { color: #3E8E5E; flex: 0 0 auto; }
+.monument .rooted.muted { color: var(--muted); font-weight: 400; }
+
+/* ==================== Circle — a shelf of lives ========================= */
+.shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 18px; margin-top: 6px; }
+.lifebook {
+  position: relative; aspect-ratio: 0.72; border-radius: 5px 11px 11px 5px;
+  overflow: hidden; cursor: pointer; background: #39445A;
+  box-shadow: 0 8px 20px rgba(20,25,45,0.22); display: flex; flex-direction: column; justify-content: flex-end;
+  transition: transform 0.14s ease, box-shadow 0.14s ease;
+}
+.lifebook:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(20,25,45,0.3); }
+.lifebook .lb-cover { position: absolute; inset: 0; background-size: cover; background-position: center; }
+.lifebook .lb-ghost { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--display); font-size: 3rem; font-weight: 600; color: rgba(255,255,255,0.2); }
+.lifebook .lb-spine { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; opacity: 0.92; }
+.lifebook .lb-biz { position: absolute; top: 9px; right: 9px; background: var(--gold); color: var(--blue-deep); font-size: 0.62rem; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
+.lifebook .lb-band { position: relative; background: rgba(17,21,34,0.62); padding: 12px 13px 13px; }
+.lifebook .lb-name { color: #fff; font-weight: 700; font-size: 1.06rem; line-height: 1.15; }
+.lifebook .lb-epi { color: #F4ECD6; font-style: italic; font-size: 0.82rem; line-height: 1.35; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lifebook .lb-meta { color: #FFE9A8; font-family: var(--hand); font-size: 1.05rem; margin-top: 6px; }
+.lifebook .lb-rooted { display: flex; align-items: center; gap: 5px; color: #EAF1FF; font-size: 0.78rem; margin-top: 6px; }
+.lifebook .lb-rooted svg { color: #9BD8AE; flex: 0 0 auto; }
+.lifebook .lb-rooted span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip {
   display: inline-block; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.5px;
   text-transform: uppercase; padding: 4px 11px; border-radius: 999px;
