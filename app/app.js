@@ -5,6 +5,7 @@
 import { supabase } from './supabase.js';
 import * as api from './api.js';
 import { LIMITS } from './limits.js';
+import { captureYmdFromFile, ymdFromTakenAt, formatPhotoDate, earliestYmd } from './photoDates.js';
 
 // ---- Small helpers ---------------------------------------------------------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1254,6 +1255,7 @@ async function viewNotifications() {
     if (n.type === 'confirm') return `${who} confirmed “${esc(n.memoryTitle || 'a moment')}” — now witnessed`;
     if (n.type === 'comment') return `${who} commented on “${esc(n.memoryTitle || 'a moment')}”${n.body ? `: “${esc(n.body)}”` : ''}`;
     if (n.type === 'contribution') return `${who} added their side to “${esc(n.memoryTitle || 'a moment')}”`;
+    if (n.type === 'share') return `${who} shared “${esc(n.memoryTitle || 'a moment')}” with you${n.body ? `: “${esc(n.body)}”` : ''}`;
     if (n.type === 'circle') return `${who} added you to their Circle`;
     if (n.type === 'memorial') return `${esc(n.body || 'A memorial notice')}`;
     if (n.type === 'keeper_request' || n.type === 'keeper_confirmed' || n.type === 'keeper_declined')
@@ -1299,7 +1301,14 @@ async function viewMoment(id) {
     <div class="wrap" id="moment-detail">
       <a class="back" href="${isOwner ? '#/journey' : `#/u/${esc(owner?.handle || '')}`}">← Back</a>
       <div class="datetab" style="font-size:1.4rem">${esc(fullDate(m))}</div>
-      <div class="panel" style="border-top-left-radius:0;">
+      <div class="panel" style="border-top-left-radius:0;position:relative;">
+        <div class="more-wrap">
+          <button class="moredots" id="more-btn" aria-label="More options" aria-haspopup="true"><svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="4.5" r="1.7"/><circle cx="5.5" cy="13.5" r="1.7"/><circle cx="14.5" cy="13.5" r="1.7"/></svg></button>
+          <div class="more-menu" id="more-menu" hidden>
+            <button class="more-item" id="share-moment"><i>↗</i> Share</button>
+            ${!isOwner ? `<button class="more-item danger" id="report-moment"><i>⚑</i> Report</button>` : ''}
+          </div>
+        </div>
         ${owner ? `<div class="muted" style="margin-bottom:8px;">A moment from <a href="#/u/${esc(owner.handle)}">${esc(owner.name)}</a>${m.milestone && MILESTONE_ICON[m.milestone] ? ' · ' + MILESTONE_ICON[m.milestone] : ''}</div>` : ''}
         ${m.title ? `<h1 style="color:var(--blue);margin:0 0 6px;font-size:calc(2rem * var(--jt-text-scale,1));">${esc(m.title)}</h1>` : ''}
         ${m.caption ? `<div style="font-size:calc(1.12rem * var(--jt-text-scale,1));color:var(--muted);">${esc(m.caption)}</div>` : ''}
@@ -1310,11 +1319,10 @@ async function viewMoment(id) {
         ${(m.tags || []).length ? `<div class="tags" style="margin-top:14px;">${m.tags.map((t) => `<span class="tag witnessed" style="background:${t.confirmed ? 'var(--gold)' : 'rgba(27,75,143,0.1)'};color:var(--blue-deep)">${t.confirmed ? '✓ ' : ''}${esc(t.label)}</span>`).join('')}</div>` : ''}
         <div class="btn-row" style="justify-content:flex-start;margin-top:18px;">
           ${canConfirm ? `<button class="btn gold sm" id="confirm-tag">✓ I was there</button>` : ''}
-          ${!isOwner && !adoptedCopyId ? `<button class="btn ghost sm" id="adopt">+ Add to my Journey</button>` : ''}
+          ${!isOwner && !adoptedCopyId && myTag && myTag.confirmed ? `<button class="btn ghost sm" id="adopt">+ Add to my Journey</button>` : ''}
           ${!isOwner && adoptedCopyId ? `<a class="btn ghost sm" href="#/moment/${esc(adoptedCopyId)}">In your Journey ✓</a>` : ''}
           ${!isOwner && myTag && !frozen ? `<button class="btn ghost sm" id="add-side">+ Add your side</button>` : ''}
           ${isOwner && !frozen ? `<a class="btn ghost sm" href="#/edit/${esc(m.id)}">Edit</a><button class="btn danger sm" id="del-moment">Delete</button>` : ''}
-          ${!isOwner ? `<button class="btn ghost sm" id="report-moment">⚑ Report</button>` : ''}
         </div>
       </div>
       ${contributions.length ? `<div class="section-title">Their side of the story</div>
@@ -1341,7 +1349,24 @@ async function viewMoment(id) {
     if (del) del.onclick = async () => { if (!confirm('Delete this moment? This cannot be undone.')) return; await api.deleteMemory(m.id); nav('#/journey'); };
   }
   const rep = $('#report-moment');
-  if (rep) rep.onclick = () => openReport({ momentId: m.id, label: `“${m.title || 'this moment'}”` });
+  if (rep) rep.onclick = () => openReport({ momentId: m.id, reportedUserId: m.ownerId || null, label: `“${m.title || 'this moment'}”` });
+  // The tri-dot overflow menu: toggle, and close on the next outside click
+  // (a one-shot listener, so nothing leaks across re-renders).
+  const moreBtn = $('#more-btn');
+  const moreMenu = $('#more-menu');
+  if (moreBtn && moreMenu) {
+    moreBtn.onclick = (e) => {
+      e.stopPropagation();
+      const willOpen = moreMenu.hidden;
+      moreMenu.hidden = !willOpen;
+      if (willOpen) {
+        const closeOnce = () => { moreMenu.hidden = true; document.removeEventListener('click', closeOnce); };
+        setTimeout(() => document.addEventListener('click', closeOnce), 0);
+      }
+    };
+  }
+  const shareBtn = $('#share-moment');
+  if (shareBtn) shareBtn.onclick = () => { if (moreMenu) moreMenu.hidden = true; openShareMoment(m); };
   const cf = $('#comment-form');
   if (cf) cf.onsubmit = async (e) => {
     e.preventDefault();
@@ -1401,6 +1426,14 @@ async function viewMomentForm(existingId) {
   }
   const pendingFiles = [];
   let keptPhotos = m ? [...(m.photos || [])] : [];
+  // Each photo's own capture date, shown tiny under its thumbnail. Keyed by the
+  // File object (freshly picked) or the URL (pulled from the shelf); missing =
+  // no timestamp = no date shown. `dateTouched` guards the moment-date autofill:
+  // start "touched" when editing so a new photo never overwrites a real date the
+  // moment already has.
+  const fileDate = new Map();
+  const urlDate = new Map();
+  let dateTouched = !!existingId;
   const usedStagedIds = new Set();
   const thisYear = new Date().getFullYear();
   const curState = m?.placeRegion || '';
@@ -1446,15 +1479,42 @@ async function viewMomentForm(existingId) {
         <button class="btn block" type="submit">${existingId ? 'Save changes' : 'Add to my Journey'}</button>
       </form>
     </div>`;
+  // Tiny "when it was taken" caption; blank when the photo has no timestamp.
+  const dateTag = (ymd) => `<div class="pp-date">${esc(formatPhotoDate(ymd))}</div>`;
   const renderPreview = () => {
     const wrap = $('#preview');
     wrap.innerHTML =
-      keptPhotos.map((url, i) => `<div class="pp"><img src="${esc(url)}" alt=""><button type="button" class="rm" data-kept="${i}">×</button></div>`).join('') +
-      pendingFiles.map((f, i) => `<div class="pp"><img src="${URL.createObjectURL(f)}" alt=""><button type="button" class="rm" data-new="${i}">×</button></div>`).join('');
+      keptPhotos.map((url, i) => `<div class="pp"><img src="${esc(url)}" alt=""><button type="button" class="rm" data-kept="${i}">×</button>${dateTag(urlDate.get(url))}</div>`).join('') +
+      pendingFiles.map((f, i) => `<div class="pp"><img src="${URL.createObjectURL(f)}" alt=""><button type="button" class="rm" data-new="${i}">×</button>${dateTag(fileDate.get(f))}</div>`).join('');
     wrap.querySelectorAll('[data-kept]').forEach((b) => (b.onclick = () => { keptPhotos.splice(+b.getAttribute('data-kept'), 1); renderPreview(); }));
     wrap.querySelectorAll('[data-new]').forEach((b) => (b.onclick = () => { pendingFiles.splice(+b.getAttribute('data-new'), 1); renderPreview(); }));
   };
-  $('#photo-input').onchange = (e) => { for (const f of e.target.files) pendingFiles.push(f); renderPreview(); };
+  // Fill the moment's date from the earliest photo that knows when it was taken —
+  // unless the user has already set the date themselves.
+  const applyPhotoDate = () => {
+    if (dateTouched) return;
+    const d = earliestYmd([...keptPhotos.map((u) => urlDate.get(u)), ...pendingFiles.map((f) => fileDate.get(f))]);
+    if (!d) return;
+    const yEl = $('#m-form input[name=year]'), mEl = $('#m-form select[name=month]'), dEl = $('#m-form input[name=day]');
+    if (yEl) yEl.value = d.year;
+    if (mEl) mEl.value = d.month;
+    if (dEl) dEl.value = d.day;
+  };
+  // A real edit to any date field means "hands off" for autofill. Setting .value
+  // in applyPhotoDate doesn't fire 'input', so autofill keeps working until the
+  // user actually types.
+  ['year', 'month', 'day'].forEach((n) => {
+    const el = $(`#m-form [name=${n}]`);
+    if (el) el.addEventListener('input', () => { dateTouched = true; });
+  });
+  $('#photo-input').onchange = async (e) => {
+    const files = [...e.target.files];
+    for (const f of files) pendingFiles.push(f);
+    renderPreview();
+    await Promise.all(files.map(async (f) => { fileDate.set(f, await captureYmdFromFile(f)); }));
+    renderPreview();
+    applyPhotoDate();
+  };
   renderPreview();
   // Load the import shelf so photos can be pulled straight in.
   (async () => {
@@ -1467,9 +1527,13 @@ async function viewMomentForm(existingId) {
       const id = elm.getAttribute('data-id');
       if (usedStagedIds.has(id)) return;
       usedStagedIds.add(id);
-      keptPhotos.push(elm.getAttribute('data-url'));
+      const url = elm.getAttribute('data-url');
+      keptPhotos.push(url);
+      const s = shelf.find((x) => x.id === id);
+      if (s) urlDate.set(url, ymdFromTakenAt(s.takenAt));
       elm.classList.add('used');
       renderPreview();
+      applyPhotoDate();
     }));
   })();
   // Your saved custom companions — tap to reuse the exact same name.
@@ -2429,6 +2493,69 @@ async function viewOrders() {
         </div></div>`).join('')
         : '<div class="empty"><div class="big">📦</div>No orders yet.<br><a href="#/merch">Order a keepsake →</a></div>'}
     </div>`;
+}
+
+// ---- Share modal -----------------------------------------------------------
+// Share a moment with other members on the platform. In-platform only for now
+// (no external social / SMS) — pick people from your Circle and they get a
+// notification linking to the moment.
+async function openShareMoment(m) {
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML = `<div class="modal"><h2>Share this moment</h2><div class="muted">Loading your Circle…</div></div>`;
+  document.body.appendChild(back);
+  const close = () => back.remove();
+  back.onclick = (e) => { if (e.target === back) close(); };
+
+  const pairs = await api.fetchCircleOf(state.user.id);
+  const ids = [...new Set(pairs.map((p) => (p.a === state.user.id ? p.b : p.a)))].filter((id) => !state.blocked.has(id));
+  const people = [];
+  for (const id of ids) { const u = await api.fetchUserById(id); if (u) people.push(u); }
+  people.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const selected = new Set();
+
+  if (!people.length) {
+    back.querySelector('.modal').innerHTML = `<h2>Share this moment</h2>
+      <p class="muted">Your Circle is empty — add people in the <a href="#/world">World</a> first, then you can share moments with them.</p>
+      <div class="btn-row" style="justify-content:flex-end;"><button class="btn ghost sm" id="sh-cancel">Close</button></div>`;
+    $('#sh-cancel', back).onclick = close;
+    return;
+  }
+
+  back.querySelector('.modal').innerHTML = `
+    <h2>Share this moment</h2>
+    <p class="muted" style="margin-top:-6px;">Send “${esc(m.title || 'this moment')}” to people in your Circle. They'll get a notification linking here.</p>
+    <div id="sh-msg"></div>
+    <div class="share-list">${people.map((u) => `<label class="share-row">
+      <span class="sr-av">${u.avatarUri ? `<img src="${esc(u.avatarUri)}" alt="">` : esc(initials(u.name || '?'))}</span>
+      <span class="sr-name">${esc(u.name || 'Unnamed')} <span class="muted">@${esc(u.handle || '')}</span></span>
+      <input type="checkbox" data-check="${esc(u.id)}">
+    </label>`).join('')}</div>
+    <div class="field" style="margin-top:12px;"><label>Add a note (optional)</label><input id="sh-note" maxlength="140" placeholder="Thought you'd want to see this."></div>
+    <div class="btn-row" style="justify-content:flex-end;">
+      <button class="btn ghost sm" id="sh-cancel">Cancel</button>
+      <button class="btn sm" id="sh-send">Share</button>
+    </div>`;
+  back.querySelectorAll('[data-check]').forEach((c) => (c.onchange = () => {
+    const id = c.getAttribute('data-check');
+    if (c.checked) selected.add(id); else selected.delete(id);
+  }));
+  $('#sh-cancel', back).onclick = close;
+  $('#sh-send', back).onclick = async () => {
+    if (!selected.size) { $('#sh-msg', back).innerHTML = `<div class="error">Pick at least one person to share with.</div>`; return; }
+    const send = $('#sh-send', back); send.disabled = true; send.textContent = 'Sharing…';
+    try {
+      const note = ($('#sh-note', back) && $('#sh-note', back).value) || '';
+      const n = await api.shareMoment(state.user, m.id, m.title, [...selected], note);
+      back.querySelector('.modal').innerHTML = `<h2>Shared</h2>
+        <p class="muted">Sent to ${n} ${n === 1 ? 'person' : 'people'} — it's waiting in their notifications.</p>
+        <div class="btn-row" style="justify-content:flex-end;"><button class="btn sm" id="sh-done">Done</button></div>`;
+      $('#sh-done', back).onclick = close;
+    } catch (e) {
+      $('#sh-msg', back).innerHTML = `<div class="error">${esc(e.message)}</div>`;
+      send.disabled = false; send.textContent = 'Share';
+    }
+  };
 }
 
 // ---- Report modal ----------------------------------------------------------

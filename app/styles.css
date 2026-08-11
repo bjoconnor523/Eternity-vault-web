@@ -292,6 +292,28 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 .lifebook .lb-rooted { display: flex; align-items: center; gap: 5px; color: #EAF1FF; font-size: 0.78rem; margin-top: 6px; }
 .lifebook .lb-rooted svg { color: #9BD8AE; flex: 0 0 auto; }
 .lifebook .lb-rooted span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ==================== Moment: tri-dot overflow menu =================== */
+.more-wrap { position: absolute; top: 10px; right: 10px; z-index: 5; }
+.moredots { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: var(--paper); color: var(--blue); cursor: pointer; padding: 0; }
+.moredots:hover { background: rgba(27,75,143,0.06); border-color: var(--blue); }
+.moredots svg { fill: currentColor; }
+.more-menu { position: absolute; top: 40px; right: 0; min-width: 152px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(20,30,50,0.18); overflow: hidden; padding: 6px; }
+.more-menu[hidden] { display: none; }
+.more-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: transparent; border: none; color: var(--ink); font-family: var(--serif); font-size: 0.98rem; padding: 9px 10px; border-radius: 8px; cursor: pointer; }
+.more-item i { font-style: normal; width: 16px; text-align: center; color: var(--blue); }
+.more-item:hover { background: rgba(27,75,143,0.07); }
+.more-item.danger, .more-item.danger i { color: #a6412f; }
+
+/* Share modal — a checklist of your Circle */
+.share-list { max-height: 300px; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; margin-top: 4px; }
+.share-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.share-row:last-child { border-bottom: none; }
+.share-row:hover { background: rgba(27,75,143,0.04); }
+.share-row .sr-av { width: 34px; height: 34px; border-radius: 50%; overflow: hidden; background: var(--cream-deep); color: var(--blue); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.8rem; flex: 0 0 auto; }
+.share-row .sr-av img { width: 100%; height: 100%; object-fit: cover; }
+.share-row .sr-name { flex: 1; font-size: 0.96rem; }
+.share-row input[type=checkbox] { width: 18px; height: 18px; }
 .chip {
   display: inline-block; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.5px;
   text-transform: uppercase; padding: 4px 11px; border-radius: 999px;
@@ -587,6 +609,7 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 .photo-preview .pp { position: relative; }
 .photo-preview img { width: 86px; height: 86px; object-fit: cover; border-radius: 10px; border: 2px solid var(--line); }
 .photo-preview .rm { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; background: var(--danger); color: #fff; border: none; font-size: 0.9rem; line-height: 1; }
+.photo-preview .pp-date { width: 86px; text-align: center; font-size: 0.62rem; line-height: 0.95rem; min-height: 0.95rem; margin-top: 2px; color: var(--muted); }
 
 /* App footer with legal links */
 .app-footer { text-align: center; color: var(--muted); font-size: 0.85rem; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); }
